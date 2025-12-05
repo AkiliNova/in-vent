@@ -1,22 +1,16 @@
+"use client";
+
 import { useState, useEffect } from 'react';
 import { 
-  Camera, 
-  Check, 
-  X, 
-  AlertTriangle, 
-  Wifi, 
-  WifiOff,
-  Volume2,
-  Crown,
-  Printer,
-  RotateCcw,
-  User
+  Camera, Check, X, AlertTriangle, Wifi, WifiOff,
+  Volume2, Crown, Printer, RotateCcw, User
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import Navigation from '@/components/Navigation';
 import { db } from '@/firebase/firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { useAuth } from '@/context/AuthContext';
 
 type ScanStatus = 'idle' | 'scanning' | 'success' | 'error' | 'flagged';
 
@@ -32,6 +26,7 @@ interface ScanResult {
 }
 
 const Scanner = () => {
+  const { tenantId } = useAuth();
   const [status, setStatus] = useState<ScanStatus>('idle');
   const [isOnline, setIsOnline] = useState(true);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -50,11 +45,17 @@ const Scanner = () => {
     };
   }, []);
 
-  // Firestore ticket validation
+  // Validate ticket
   const validateTicket = async (ticketId: string) => {
+    if (!tenantId) {
+      toast({ title: "Tenant Missing", description: "Cannot check in without a tenant.", variant: "destructive" });
+      return;
+    }
+
     setStatus('scanning');
     try {
-      const ticketRef = doc(db, 'guests', ticketId);
+      // Tenant-scoped guest reference
+      const ticketRef = doc(db, `tenants/${tenantId}/guests`, ticketId);
       const ticketSnap = await getDoc(ticketRef);
 
       if (!ticketSnap.exists()) {
@@ -72,24 +73,25 @@ const Scanner = () => {
 
       const data = ticketSnap.data() as any;
 
-      if (data.checkedIn) {
+      if (data.status === 'checked-in') {
         setScanResult({
           name: `${data.firstName} ${data.lastName}`,
           email: data.email,
           ticketType: data.guestCategory || 'General',
           isVIP: data.guestCategory === 'VIP',
           alreadyCheckedIn: true,
-          checkInTime: data.checkInTime || '',
+          checkInTime: data.checkedInAt || '',
           isFlagged: false,
         });
         setStatus('error');
         return;
       }
 
-      // Mark ticket as checked in
+      // Update guest status to checked-in
+      const now = new Date().toISOString();
       await updateDoc(ticketRef, {
-        checkedIn: true,
-        checkInTime: new Date().toLocaleTimeString(),
+        status: 'checked-in',
+        checkedInAt: now,
       });
 
       const result: ScanResult = {
@@ -98,6 +100,7 @@ const Scanner = () => {
         ticketType: data.guestCategory || 'General',
         isVIP: data.guestCategory === 'VIP',
         isFlagged: false,
+        checkInTime: now,
       };
 
       setScanResult(result);
@@ -147,7 +150,6 @@ const Scanner = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
-      
       <main className="pt-24 pb-12 px-6">
         <div className="container mx-auto max-w-4xl">
           {/* Header */}
@@ -161,9 +163,7 @@ const Scanner = () => {
                 {isOnline ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
                 {isOnline ? 'Online' : 'Offline Mode'}
               </div>
-              <Button variant="outline" size="icon">
-                <Volume2 className="w-4 h-4" />
-              </Button>
+              <Button variant="outline" size="icon"><Volume2 className="w-4 h-4" /></Button>
             </div>
           </div>
 
@@ -171,6 +171,7 @@ const Scanner = () => {
             {/* Scanner View */}
             <div className="space-y-6">
               <div className={`relative aspect-square rounded-3xl border-4 transition-all duration-300 ${getStatusColor()}`}>
+                {/* Frame */}
                 <div className="absolute inset-8 border-2 border-dashed border-muted-foreground/30 rounded-2xl" />
                 <div className="absolute top-6 left-6 w-12 h-12 border-l-4 border-t-4 border-primary rounded-tl-lg" />
                 <div className="absolute top-6 right-6 w-12 h-12 border-r-4 border-t-4 border-primary rounded-tr-lg" />

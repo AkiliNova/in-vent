@@ -19,9 +19,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import Navigation from "@/components/Navigation";
-
 import { db } from "@/firebase/firebase";
 import { collection, addDoc, serverTimestamp, query, where, getDocs, updateDoc, doc, getDoc } from "firebase/firestore";
+import { useAuth } from "@/context/AuthContext";
 
 // -----------------------------
 // Types
@@ -37,6 +37,8 @@ interface FormData {
   agreeTerms: boolean;
   agreeMarketing: boolean;
   guestId: string;
+  status: "pending" | "checked-in" | "flagged";
+  checkedInAt?: string;
 }
 
 interface AppSettings {
@@ -47,6 +49,7 @@ interface AppSettings {
 // Registration Component
 // -----------------------------
 const Registration = () => {
+  const { tenantId } = useAuth();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [ticketId, setTicketId] = useState<string | null>(null);
@@ -58,28 +61,31 @@ const Registration = () => {
     phone: '',
     guestCategory: '',
     companyOrIndividual: '',
-    dietaryRestrictions: 'None', // default value
+    dietaryRestrictions: 'None',
     agreeTerms: false,
     agreeMarketing: false,
-    guestId: ''
+    guestId: '',
+    status: "pending",
   });
 
-  const [settings, setSettings] = useState<AppSettings>({ dietaryOptions: ["None", "Vegetarian", "Vegan", "Gluten-Free", "Halal", "Kosher"] });
+  const [settings, setSettings] = useState<AppSettings>({
+    dietaryOptions: ["None", "Vegetarian", "Vegan", "Gluten-Free", "Halal", "Kosher"]
+  });
 
   // -----------------------------
-  // Load Settings from Firestore
+  // Load tenant-scoped settings
   // -----------------------------
   useEffect(() => {
     const fetchSettings = async () => {
+      if (!tenantId) return;
       try {
-        const docRef = doc(db, "app_settings", "global");
+        const docRef = doc(db, `tenants/${tenantId}/app_settings`, "settings");
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           const data = snap.data() as AppSettings;
           if (data.dietaryOptions?.length) {
             setSettings({ dietaryOptions: data.dietaryOptions });
-            // Ensure default is first option if not already set
-            if (!settings.dietaryOptions.includes(formData.dietaryRestrictions)) {
+            if (!data.dietaryOptions.includes(formData.dietaryRestrictions)) {
               setFormData(prev => ({ ...prev, dietaryRestrictions: data.dietaryOptions[0] }));
             }
           }
@@ -89,44 +95,75 @@ const Registration = () => {
       }
     };
     fetchSettings();
-  }, []);
+  }, [tenantId]);
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const isStep1Valid = formData.firstName && formData.lastName && formData.email && formData.phone && formData.guestCategory && formData.companyOrIndividual;
+  const isStep1Valid =
+    formData.firstName &&
+    formData.lastName &&
+    formData.email &&
+    formData.phone &&
+    formData.guestCategory &&
+    formData.companyOrIndividual;
+
   const isStep2Valid = formData.agreeTerms;
 
   // -----------------------------
   // Submit Registration
   // -----------------------------
   const handleSubmit = async () => {
-    if (!isStep2Valid) return;
-    setIsSubmitting(true);
+    if (!tenantId) {
+      toast({
+        title: "Tenant Not Found",
+        description: "You cannot register without a tenant.",
+        variant: "destructive"
+      });
+      return;
+    }
 
+    if (!isStep2Valid) return;
+
+    setIsSubmitting(true);
     try {
-      const guestsRef = collection(db, "guests");
+      const guestsRef = collection(db, `tenants/${tenantId}/guests`);
+
+      // Check for duplicate email
       const emailQuery = query(guestsRef, where("email", "==", formData.email));
       const emailSnapshot = await getDocs(emailQuery);
-
       if (!emailSnapshot.empty) {
-        toast({ title: "Email Already Registered", description: "This email is already registered.", variant: "destructive" });
+        toast({
+          title: "Email Already Registered",
+          description: "This email is already registered for this tenant.",
+          variant: "destructive"
+        });
         setIsSubmitting(false);
         return;
       }
 
-      const docRef = await addDoc(guestsRef, {
+      // Prepare guest data safely
+      const guestData: any = {
         ...formData,
         createdAt: serverTimestamp(),
-      });
+        registeredAt: new Date().toISOString(),
+      };
+      if (formData.status === 'checked-in') {
+        guestData.checkedInAt = new Date().toISOString();
+      }
 
-      await updateDoc(docRef, { ticketId: docRef.id });
+      // Add guest
+      const docRef = await addDoc(guestsRef, guestData);
+
+      // Update guestId
+      await updateDoc(docRef, { guestId: docRef.id });
       setFormData(prev => ({ ...prev, guestId: docRef.id }));
       setTicketId(docRef.id);
 
       toast({ title: "Registration Complete!", description: "Your QR pass has been generated." });
       setStep(3);
+
     } catch (error: any) {
       console.error(error);
       toast({ title: "Registration Failed", description: error.message || "Something went wrong.", variant: "destructive" });
@@ -135,11 +172,15 @@ const Registration = () => {
     }
   };
 
+  // -----------------------------
+  // Render
+  // -----------------------------
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
       <main className="pt-24 pb-12 px-6">
         <div className="container mx-auto max-w-2xl">
+
           {/* Progress Steps */}
           <div className="flex items-center justify-center gap-4 mb-12">
             {[1, 2, 3].map(s => (
@@ -155,117 +196,106 @@ const Registration = () => {
           {/* STEP 1 */}
           {step === 1 && (
             <div className="glass rounded-3xl p-8 animate-slide-up">
-              <div className="text-center mb-8">
-                <h1 className="text-3xl font-bold text-foreground mb-2">Register for Event</h1>
-                <p className="text-muted-foreground">Fill in your details to receive your QR pass</p>
-              </div>
-              <div className="space-y-6">
-                {/* Names */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="flex items-center gap-2"><User className="w-4 h-4" /> First Name</Label>
-                    <Input className="h-12" value={formData.firstName} onChange={e => handleInputChange("firstName", e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>Last Name</Label>
-                    <Input className="h-12" value={formData.lastName} onChange={e => handleInputChange("lastName", e.target.value)} />
-                  </div>
-                </div>
-
-                {/* Email */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="flex items-center gap-2"><Mail className="w-4 h-4" /> Email Address</Label>
-                  <Input type="email" className="h-12" value={formData.email} onChange={e => handleInputChange("email", e.target.value)} />
+                  <Label className="flex items-center gap-2"><User className="w-4 h-4" /> First Name</Label>
+                  <Input className="h-12" value={formData.firstName} onChange={e => handleInputChange("firstName", e.target.value)} />
                 </div>
-
-                {/* Phone */}
                 <div>
-                  <Label className="flex items-center gap-2"><Phone className="w-4 h-4" /> Phone Number</Label>
-                  <Input className="h-12" value={formData.phone} onChange={e => handleInputChange("phone", e.target.value)} />
+                  <Label>Last Name</Label>
+                  <Input className="h-12" value={formData.lastName} onChange={e => handleInputChange("lastName", e.target.value)} />
                 </div>
-
-                {/* Category + Company */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Guest Category</Label>
-                    <Select onValueChange={value => handleInputChange("guestCategory", value)}>
-                      <SelectTrigger className="h-12">
-                        <SelectValue placeholder="Select Category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="VIP">VIP</SelectItem>
-                        <SelectItem value="Guest">Guest</SelectItem>
-                        <SelectItem value="Speaker">Speaker</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Company / Individual</Label>
-                    <Input className="h-12" value={formData.companyOrIndividual} onChange={e => handleInputChange("companyOrIndividual", e.target.value)} />
-                  </div>
-                </div>
-
-                <Button variant="hero" size="xl" className="w-full" disabled={!isStep1Valid} onClick={() => setStep(2)}>
-                  Continue <ArrowRight className="w-5 h-5" />
-                </Button>
               </div>
+
+              <div className="mt-4">
+                <Label className="flex items-center gap-2"><Mail className="w-4 h-4" /> Email</Label>
+                <Input type="email" className="h-12" value={formData.email} onChange={e => handleInputChange("email", e.target.value)} />
+              </div>
+              <div className="mt-4">
+                <Label className="flex items-center gap-2"><Phone className="w-4 h-4" /> Phone</Label>
+                <Input className="h-12" value={formData.phone} onChange={e => handleInputChange("phone", e.target.value)} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div>
+                  <Label>Guest Category</Label>
+                  <Select onValueChange={value => handleInputChange("guestCategory", value)}>
+                    <SelectTrigger className="h-12"><SelectValue placeholder="Select Category" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="VIP">VIP</SelectItem>
+                      <SelectItem value="Guest">Guest</SelectItem>
+                      <SelectItem value="Speaker">Speaker</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Company / Individual</Label>
+                  <Input className="h-12" value={formData.companyOrIndividual} onChange={e => handleInputChange("companyOrIndividual", e.target.value)} />
+                </div>
+              </div>
+
+              <Button variant="hero" size="xl" className="w-full mt-6" disabled={!isStep1Valid} onClick={() => setStep(2)}>
+                Continue <ArrowRight className="w-5 h-5" />
+              </Button>
             </div>
           )}
 
           {/* STEP 2 */}
           {step === 2 && (
             <div className="glass rounded-3xl p-8 animate-slide-up">
-              <div className="text-center mb-8">
-                <h1 className="text-3xl font-bold mb-2">Almost There!</h1>
-                <p className="text-muted-foreground">Just a few more details</p>
+              <Label className="flex items-center gap-2"><UtensilsCrossed className="w-4 h-4" /> Dietary Needs</Label>
+              <Select
+                value={formData.dietaryRestrictions}
+                onValueChange={val => setFormData(prev => ({ ...prev, dietaryRestrictions: val }))}
+              >
+                <SelectTrigger className="w-full"><SelectValue placeholder="Select Dietary Preference" /></SelectTrigger>
+                <SelectContent>
+                  {settings.dietaryOptions.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              <div className="mt-4">
+                <Label>Status</Label>
+                <div className="flex gap-4 mt-2">
+                  {['pending', 'checked-in', 'flagged'].map(s => (
+                    <label key={s} className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="status"
+                        value={s}
+                        checked={formData.status === s}
+                        onChange={() => setFormData(prev => ({
+                          ...prev,
+                          status: s as "pending" | "checked-in" | "flagged",
+                          checkedInAt: s === 'checked-in' ? new Date().toISOString() : undefined
+                        }))}
+                      />
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </label>
+                  ))}
+                </div>
               </div>
-              <div className="space-y-6">
-                {/* Dietary Dropdown */}
-                <div>
-                  <Label className="flex items-center gap-2"><UtensilsCrossed className="w-4 h-4" /> Dietary Needs</Label>
-                  <Select
-                    value={formData.dietaryRestrictions}
-                    onValueChange={(val) =>
-                      setFormData((prev) => ({ ...prev, dietaryRestrictions: val }))
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select Dietary Preference" />
-                    </SelectTrigger>
 
-                    <SelectContent>
-                      <SelectItem value="None">None</SelectItem>
-                      <SelectItem value="Vegetarian">Vegetarian</SelectItem>
-                      <SelectItem value="Vegan">Vegan</SelectItem>
-                      <SelectItem value="Halal">Halal</SelectItem>
-                      <SelectItem value="Kosher">Kosher</SelectItem>
-                    </SelectContent>
-                  </Select>
-
+              <div className="space-y-4 pt-4 border-t border-border">
+                <div className="flex items-start space-x-3">
+                  <Checkbox checked={formData.agreeTerms} onCheckedChange={checked => handleInputChange("agreeTerms", checked as boolean)} />
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    I agree to the <a className="text-primary hover:underline">Terms</a> and <a className="text-primary hover:underline">Privacy</a>
+                  </p>
                 </div>
-
-                {/* Terms & Marketing */}
-                <div className="space-y-4 pt-4 border-t border-border">
-                  <div className="flex items-start space-x-3">
-                    <Checkbox checked={formData.agreeTerms} onCheckedChange={checked => handleInputChange("agreeTerms", checked as boolean)} />
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      I agree to the <a className="text-primary hover:underline">Terms</a> and <a className="text-primary hover:underline">Privacy</a>
-                    </p>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <Checkbox checked={formData.agreeMarketing} onCheckedChange={checked => handleInputChange("agreeMarketing", checked as boolean)} />
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      I’d like to receive updates about future events.
-                    </p>
-                  </div>
+                <div className="flex items-start space-x-3">
+                  <Checkbox checked={formData.agreeMarketing} onCheckedChange={checked => handleInputChange("agreeMarketing", checked as boolean)} />
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    I’d like to receive updates about future events.
+                  </p>
                 </div>
+              </div>
 
-                <div className="flex gap-4">
-                  <Button variant="outline" size="xl" onClick={() => setStep(1)}>Back</Button>
-                  <Button variant="hero" size="xl" disabled={!isStep2Valid || isSubmitting} onClick={handleSubmit} className="flex-1">
-                    {isSubmitting ? "Processing..." : <>Get My QR Pass <QrCode className="w-5 h-5" /></>}
-                  </Button>
-                </div>
+              <div className="flex gap-4 mt-4">
+                <Button variant="outline" size="xl" onClick={() => setStep(1)}>Back</Button>
+                <Button variant="hero" size="xl" disabled={!isStep2Valid || isSubmitting} onClick={handleSubmit} className="flex-1">
+                  {isSubmitting ? "Processing..." : <>Get My QR Pass <QrCode className="w-5 h-5" /></>}
+                </Button>
               </div>
             </div>
           )}
@@ -302,7 +332,8 @@ const Registration = () => {
                   dietaryRestrictions: settings.dietaryOptions[0],
                   agreeTerms: false,
                   agreeMarketing: false,
-                  guestId: ''
+                  guestId: '',
+                  status: "pending",
                 });
                 setTicketId(null);
                 setStep(1);
@@ -311,6 +342,7 @@ const Registration = () => {
               </Button>
             </div>
           )}
+
         </div>
       </main>
     </div>

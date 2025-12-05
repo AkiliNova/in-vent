@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { firebaseErrorMessage } from "@/utils/firebaseErrors";
 
 const AdminLogin = () => {
-  const { login } = useAuth();
+  const { login, tenantId } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -21,11 +21,17 @@ const AdminLogin = () => {
 
     try {
       await login(email, password);
+
+      if (!tenantId) {
+        alert("No tenant assigned to this admin. Contact super admin.");
+        setLoading(false);
+        return;
+      }
+
       navigate("/dashboard");
     } catch (err: any) {
       const code =
         err?.code || err?.message?.match(/auth\/[a-zA-Z0-9-]+/)?.[0] || "";
-
       setError(firebaseErrorMessage(code));
     } finally {
       setLoading(false);
@@ -35,15 +41,10 @@ const AdminLogin = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="max-w-md w-full bg-secondary p-8 rounded-2xl shadow-md">
-        <h1 className="text-2xl font-bold mb-6 text-foreground" data-cy="login-header">
-          Admin Login
-        </h1>
+        <h1 className="text-2xl font-bold mb-6 text-foreground">Admin Login</h1>
 
         {error && (
-          <div
-            className="mb-4 p-2 text-sm text-destructive bg-destructive/20 rounded"
-            data-cy="login-error"
-          >
+          <div className="mb-4 p-2 text-sm text-destructive bg-destructive/20 rounded">
             {error}
           </div>
         )}
@@ -53,7 +54,6 @@ const AdminLogin = () => {
             <label className="block text-sm font-medium mb-1">Email</label>
             <Input
               type="email"
-              data-cy="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -64,14 +64,13 @@ const AdminLogin = () => {
             <label className="block text-sm font-medium mb-1">Password</label>
             <Input
               type="password"
-              data-cy="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={loading} data-cy="login-button">
+          <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Logging in..." : "Login"}
           </Button>
         </form>

@@ -30,6 +30,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import { toast } from "@/hooks/use-toast";
 import Navigation from "@/components/Navigation";
+import { useAuth } from "@/context/AuthContext"; // Your tenant/auth context
 
 // Default values
 const defaultSettings = {
@@ -54,46 +55,51 @@ const defaultSettings = {
 };
 
 const Settings = () => {
+  const { tenantId } = useAuth(); // get tenantId from auth context
   const [activeTab, setActiveTab] = useState("general");
   const [settings, setSettings] = useState(defaultSettings);
   const [loading, setLoading] = useState(true);
 
-  // -------------------------------------------
-  // LOAD SETTINGS FROM FIRESTORE
-  // -------------------------------------------
+  // Load tenant-specific settings
   useEffect(() => {
-    const load = async () => {
+    const loadSettings = async () => {
+      if (!tenantId) return;
+
       try {
-        const ref = doc(db, "app_settings", "global");
+        const ref = doc(db, `tenants/${tenantId}/app_settings`, "config");
         const snap = await getDoc(ref);
 
         if (snap.exists()) {
           setSettings({ ...defaultSettings, ...snap.data() });
+        } else {
+          setSettings(defaultSettings);
         }
-
       } catch (error) {
         console.error("Failed to load settings:", error);
         toast({ title: "Error", description: "Failed to load settings", variant: "destructive" });
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     };
 
-    load();
-  }, []);
+    loadSettings();
+  }, [tenantId]);
 
-  // -------------------------------------------
-  // SAVE TO FIRESTORE
-  // -------------------------------------------
+  // Save tenant-specific settings
   const handleSave = async () => {
+    if (!tenantId) {
+      toast({ title: "Tenant Missing", description: "Cannot save settings without a tenant.", variant: "destructive" });
+      return;
+    }
+
     try {
-      await setDoc(doc(db, "app_settings", "global"), settings, { merge: true });
+      const ref = doc(db, `tenants/${tenantId}/app_settings`, "config");
+      await setDoc(ref, settings, { merge: true });
 
       toast({
         title: "Settings Saved",
         description: "Your changes have been saved successfully.",
       });
-
     } catch (error) {
       console.error("SAVE FAILED:", error);
       toast({
@@ -143,7 +149,7 @@ const Settings = () => {
 
           <div className="grid lg:grid-cols-4 gap-8">
 
-            {/* LEFT SIDEBAR NAVIGATION */}
+            {/* Sidebar */}
             <div className="lg:col-span-1">
               <nav className="glass rounded-2xl p-4 space-y-1">
                 {[
@@ -171,16 +177,13 @@ const Settings = () => {
               </nav>
             </div>
 
-            {/* MAIN CONTENT */}
+            {/* Main Content */}
             <div className="lg:col-span-3">
-
-              {/* GENERAL TAB */}
+              {/* General Tab */}
               {activeTab === "general" && (
                 <div className="glass rounded-2xl p-8 space-y-8">
-
                   <div>
                     <h2 className="text-xl font-semibold text-foreground mb-6">Event Details</h2>
-
                     <div className="grid md:grid-cols-2 gap-6">
 
                       <div className="space-y-2">
@@ -244,11 +247,7 @@ const Settings = () => {
                 </div>
               )}
 
-              {/* ---------------------------------------- */}
-              {/* THE REST OF YOUR TABS REMAIN UNCHANGED  */}
-              {/* ---------------------------------------- */}
-              {/* I DID NOT TOUCH ANY UI — ONLY ADDED FIRESTORE */}
-
+              {/* Features Tab */}
               {activeTab === "features" && (
                 <div className="glass rounded-2xl p-8 space-y-6">
                   <h2 className="text-xl font-semibold text-foreground mb-6">Feature Settings</h2>
@@ -322,38 +321,18 @@ const Settings = () => {
                 </div>
               )}
 
-              {/* Notifications */}
+              {/* Notifications Tab */}
               {activeTab === "notifications" && (
                 <div className="glass rounded-2xl p-8 space-y-6">
                   <h2 className="text-xl font-semibold text-foreground mb-6">Notification Preferences</h2>
 
                   <div className="space-y-4">
                     {[
-                      {
-                        key: "emailNotifications",
-                        label: "Email Notifications",
-                        desc: "Receive event updates via email",
-                      },
-                      {
-                        key: "smsNotifications",
-                        label: "SMS Notifications",
-                        desc: "Receive urgent alerts via SMS",
-                      },
-                      {
-                        key: "capacityAlerts",
-                        label: "Capacity Alerts",
-                        desc: "Alert when rooms reach 90% capacity",
-                      },
-                      {
-                        key: "vipAlerts",
-                        label: "VIP Arrival Alerts",
-                        desc: "Notify when VIP guests check in",
-                      },
-                      {
-                        key: "flaggedEntryAlerts",
-                        label: "Flagged Entry Alerts",
-                        desc: "Alert on flagged or banned entries",
-                      },
+                      { key: "emailNotifications", label: "Email Notifications", desc: "Receive event updates via email" },
+                      { key: "smsNotifications", label: "SMS Notifications", desc: "Receive urgent alerts via SMS" },
+                      { key: "capacityAlerts", label: "Capacity Alerts", desc: "Alert when rooms reach 90% capacity" },
+                      { key: "vipAlerts", label: "VIP Arrival Alerts", desc: "Notify when VIP guests check in" },
+                      { key: "flaggedEntryAlerts", label: "Flagged Entry Alerts", desc: "Alert on flagged or banned entries" },
                     ].map((item) => (
                       <div
                         key={item.key}
@@ -373,7 +352,7 @@ const Settings = () => {
                 </div>
               )}
 
-              {/* Integrations */}
+              {/* Integrations Tab */}
               {activeTab === "integrations" && (
                 <div className="glass rounded-2xl p-8 space-y-6">
                   <h2 className="text-xl font-semibold text-foreground mb-6">Integrations</h2>
@@ -390,22 +369,13 @@ const Settings = () => {
                           </div>
                           <div>
                             <p className="font-medium text-foreground">{integration.name}</p>
-                            <p
-                              className={`text-sm ${
-                                integration.status === "connected"
-                                  ? "text-success"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
+                            <p className={`text-sm ${integration.status === "connected" ? "text-success" : "text-muted-foreground"}`}>
                               {integration.status === "connected" ? "● Connected" : "Not connected"}
                             </p>
                           </div>
                         </div>
 
-                        <Button
-                          variant={integration.status === "connected" ? "outline" : "hero"}
-                          size="sm"
-                        >
+                        <Button variant={integration.status === "connected" ? "outline" : "hero"} size="sm">
                           {integration.status === "connected" ? "Configure" : "Connect"}
                           <ExternalLink className="w-4 h-4 ml-2" />
                         </Button>
@@ -417,11 +387,7 @@ const Settings = () => {
                     <h3 className="font-medium text-foreground mb-4">API Access</h3>
                     <div className="flex items-center gap-4">
                       <div className="flex-1">
-                        <Input
-                          value="sk_live_************************"
-                          readOnly
-                          className="font-mono h-12"
-                        />
+                        <Input value="sk_live_************************" readOnly className="font-mono h-12" />
                       </div>
                       <Button variant="outline">
                         <Key className="w-4 h-4 mr-2" />
@@ -432,7 +398,7 @@ const Settings = () => {
                 </div>
               )}
 
-              {/* Team */}
+              {/* Team Tab */}
               {activeTab === "team" && (
                 <div className="glass rounded-2xl p-8 space-y-6">
                   <div className="flex items-center justify-between mb-6">
@@ -452,10 +418,7 @@ const Settings = () => {
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
                             <span className="text-sm font-medium text-primary">
-                              {member.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
+                              {member.name.split(" ").map((n) => n[0]).join("")}
                             </span>
                           </div>
                           <div>
@@ -465,18 +428,10 @@ const Settings = () => {
                         </div>
 
                         <div className="flex items-center gap-4">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs ${
-                              member.role === "Super Admin"
-                                ? "bg-primary/20 text-primary"
-                                : "bg-muted text-muted-foreground"
-                            }`}
-                          >
+                          <span className={`px-3 py-1 rounded-full text-xs ${member.role === "Super Admin" ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
                             {member.role}
                           </span>
-                          <Button variant="ghost" size="sm">
-                            Edit
-                          </Button>
+                          <Button variant="ghost" size="sm">Edit</Button>
                         </div>
                       </div>
                     ))}
@@ -484,92 +439,84 @@ const Settings = () => {
                 </div>
               )}
 
-              {/* Security */}
+              {/* Security Tab */}
               {activeTab === "security" && (
                 <div className="glass rounded-2xl p-8 space-y-8">
+                  <h2 className="text-xl font-semibold text-foreground mb-6">Security & Compliance</h2>
 
-                  <div>
-                    <h2 className="text-xl font-semibold text-foreground mb-6">Security & Compliance</h2>
+                  <div className="space-y-6">
 
-                    <div className="space-y-6">
-
-                      <div className="p-4 rounded-xl bg-success/10 border border-success/30">
-                        <div className="flex items-center gap-3">
-                          <Check className="w-5 h-5 text-success" />
-                          <div>
-                            <p className="font-medium text-foreground">GDPR Compliant</p>
-                            <p className="text-sm text-muted-foreground">
-                              Your event meets GDPR requirements
-                            </p>
-                          </div>
+                    <div className="p-4 rounded-xl bg-success/10 border border-success/30">
+                      <div className="flex items-center gap-3">
+                        <Check className="w-5 h-5 text-success" />
+                        <div>
+                          <p className="font-medium text-foreground">GDPR Compliant</p>
+                          <p className="text-sm text-muted-foreground">Your event meets GDPR requirements</p>
                         </div>
                       </div>
+                    </div>
 
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/50">
-                          <div>
-                            <p className="font-medium text-foreground">Require Consent</p>
-                            <p className="text-sm text-muted-foreground">
-                              Guests must agree to terms before registration
-                            </p>
-                          </div>
-                          <Switch
-                            checked={settings.requireConsent}
-                            onCheckedChange={(c) => setSettings({ ...settings, requireConsent: c })}
-                          />
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/50">
+                        <div>
+                          <p className="font-medium text-foreground">Require Consent</p>
+                          <p className="text-sm text-muted-foreground">Guests must agree to terms before registration</p>
                         </div>
-
-                        <div className="space-y-2">
-                          <Label>Data Retention Period (days)</Label>
-                          <Select
-                            value={settings.dataRetention}
-                            onValueChange={(v) => setSettings({ ...settings, dataRetention: v })}
-                          >
-                            <SelectTrigger className="h-12 max-w-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="30">30 days</SelectItem>
-                              <SelectItem value="90">90 days</SelectItem>
-                              <SelectItem value="180">180 days</SelectItem>
-                              <SelectItem value="365">1 year</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>Anonymize Data After (days)</Label>
-                          <Select
-                            value={settings.anonymizeAfter}
-                            onValueChange={(v) => setSettings({ ...settings, anonymizeAfter: v })}
-                          >
-                            <SelectTrigger className="h-12 max-w-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="90">90 days</SelectItem>
-                              <SelectItem value="180">180 days</SelectItem>
-                              <SelectItem value="365">1 year</SelectItem>
-                              <SelectItem value="730">2 years</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
+                        <Switch
+                          checked={settings.requireConsent}
+                          onCheckedChange={(c) => setSettings({ ...settings, requireConsent: c })}
+                        />
                       </div>
 
-                      <div className="flex gap-4 pt-4">
-                        <Button variant="outline">Export All Data</Button>
-
-                        <Button variant="destructive">
-                          <AlertTriangle className="w-4 h-4 mr-2" />
-                          Delete All Data
-                        </Button>
+                      <div className="space-y-2">
+                        <Label>Data Retention Period (days)</Label>
+                        <Select
+                          value={settings.dataRetention}
+                          onValueChange={(v) => setSettings({ ...settings, dataRetention: v })}
+                        >
+                          <SelectTrigger className="h-12 max-w-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="30">30 days</SelectItem>
+                            <SelectItem value="90">90 days</SelectItem>
+                            <SelectItem value="180">180 days</SelectItem>
+                            <SelectItem value="365">1 year</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
+
+                      <div className="space-y-2">
+                        <Label>Anonymize Data After (days)</Label>
+                        <Select
+                          value={settings.anonymizeAfter}
+                          onValueChange={(v) => setSettings({ ...settings, anonymizeAfter: v })}
+                        >
+                          <SelectTrigger className="h-12 max-w-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="90">90 days</SelectItem>
+                            <SelectItem value="180">180 days</SelectItem>
+                            <SelectItem value="365">1 year</SelectItem>
+                            <SelectItem value="730">2 years</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4 pt-4">
+                      <Button variant="outline">Export All Data</Button>
+                      <Button variant="destructive">
+                        <AlertTriangle className="w-4 h-4 mr-2" />
+                        Delete All Data
+                      </Button>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Branding */}
+              {/* Branding Tab */}
               {activeTab === "branding" && (
                 <div className="glass rounded-2xl p-8 space-y-6">
                   <h2 className="text-xl font-semibold text-foreground mb-6">Branding</h2>

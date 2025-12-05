@@ -14,6 +14,7 @@ import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import AdminLogin from "./pages/admin/Login";
 import RoomsPage from "./pages/Rooms";
+import OrganizerOnboarding from "./pages/OrganizerOnboarding";
 
 // 🔹 Import ProtectedRoute
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -80,6 +81,7 @@ const App = () => (
           </ProtectedRoute>
           } />
           <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/onboarding" element={<OrganizerOnboarding />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

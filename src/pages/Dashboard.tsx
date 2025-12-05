@@ -24,6 +24,7 @@ import {
   doc,
   getDoc,
 } from "firebase/firestore";
+import { useAuth } from "@/context/AuthContext";
 
 // -----------------------------
 // Types
@@ -54,6 +55,7 @@ interface EventSettings {
 // Dashboard Component
 // -----------------------------
 const Dashboard = () => {
+  const { tenantId } = useAuth();
   const [loading, setLoading] = useState(true);
 
   // Settings
@@ -72,14 +74,16 @@ const Dashboard = () => {
   const [recentActivity, setRecentActivity] = useState<Activity[]>([]);
 
   // -----------------------------
-  // Load Settings + Data
+  // Load tenant-specific data
   // -----------------------------
   useEffect(() => {
+    if (!tenantId) return;
+
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
-        // 1️⃣ Load app settings
-        const settingsRef = doc(db, "app_settings", "global");
+        // 1️⃣ Load app settings for tenant
+        const settingsRef = doc(db, `tenants/${tenantId}/app_settings`, "settings");
         const settingsSnap = await getDoc(settingsRef);
 
         if (settingsSnap.exists()) {
@@ -93,20 +97,20 @@ const Dashboard = () => {
           });
         }
 
-        // 2️⃣ Load guests
-        const guestsSnapshot = await getDocs(collection(db, "guests"));
+        // 2️⃣ Load tenant guests
+        const guestsSnapshot = await getDocs(collection(db, `tenants/${tenantId}/guests`));
         const allGuests = guestsSnapshot.docs.map(doc => doc.data());
-        const checkedInCount = allGuests.filter((g: any) => g.checkedIn).length;
+        const checkedInCount = allGuests.filter((g: any) => g.status === "checked-in").length;
         setCheckedIn(checkedInCount);
         setExpected(allGuests.length);
 
-        // 3️⃣ Load rooms
-        const roomsSnapshot = await getDocs(collection(db, "rooms"));
+        // 3️⃣ Load tenant rooms
+        const roomsSnapshot = await getDocs(collection(db, `tenants/${tenantId}/rooms`));
         setRooms(roomsSnapshot.docs.map(doc => doc.data() as Room));
 
-        // 4️⃣ Load recent activity (last 5)
+        // 4️⃣ Load tenant recent activity (last 5)
         const recentSnapshot = await getDocs(
-          query(collection(db, "activities"), orderBy("timestamp", "desc"), limit(5))
+          query(collection(db, `tenants/${tenantId}/activities`), orderBy("timestamp", "desc"), limit(5))
         );
 
         const recentData: Activity[] = recentSnapshot.docs.map(doc => {
@@ -115,7 +119,9 @@ const Dashboard = () => {
             name: data.name,
             type: data.type,
             action: data.action,
-            time: new Date(data.timestamp?.toDate?.() || Date.now()).toLocaleTimeString(),
+            time: data.timestamp?.toDate 
+              ? new Date(data.timestamp.toDate()).toLocaleTimeString() 
+              : new Date().toLocaleTimeString(),
             badge: data.badge || null,
           };
         });
@@ -129,7 +135,7 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [tenantId]);
 
   if (loading) {
     return (
@@ -143,21 +149,9 @@ const Dashboard = () => {
   // Stats Cards
   // -----------------------------
   const stats = [
-    {
-      label: "Checked In",
-      value: checkedIn,
-      icon: UserCheck,
-      color: "text-success",
-      change: "+12%",
-    },
+    { label: "Checked In", value: checkedIn, icon: UserCheck, color: "text-success", change: "+12%" },
     { label: "Expected", value: expected, icon: Users, color: "text-primary", change: null },
-    {
-      label: "No Shows",
-      value: expected - checkedIn,
-      icon: AlertTriangle,
-      color: "text-destructive",
-      change: "-3%",
-    },
+    { label: "No Shows", value: expected - checkedIn, icon: AlertTriangle, color: "text-destructive", change: "-3%" },
     { label: "Avg Check-in", value: "2.8s", icon: Clock, color: "text-primary", change: "-0.4s" },
   ];
 
@@ -174,12 +168,8 @@ const Dashboard = () => {
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold" data-cy="dashboard-header">
-                {settings.eventName}
-              </h1>
-              <p className="text-muted-foreground">
-                {settings.venue} • Live Now
-              </p>
+              <h1 className="text-3xl font-bold">{settings.eventName}</h1>
+              <p className="text-muted-foreground">{settings.venue} • Live Now</p>
             </div>
             <div className="flex items-center gap-3 mt-4 md:mt-0">
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/20 text-success text-sm">
@@ -199,11 +189,7 @@ const Dashboard = () => {
                     <stat.icon className="w-6 h-6" />
                   </div>
                   {stat.change && (
-                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                      stat.change.startsWith('+') || stat.change.startsWith('-0') 
-                        ? 'bg-success/20 text-success' 
-                        : 'bg-destructive/20 text-destructive'
-                    }`}>
+                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${stat.change.startsWith('+') ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}`}>
                       {stat.change}
                     </span>
                   )}
@@ -235,18 +221,11 @@ const Dashboard = () => {
                           <span className="font-medium text-foreground">{room.name}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground">
-                            {room.current} / {room.max}
-                          </span>
-                          {percentage > 90 && (
-                            <AlertTriangle className="w-4 h-4 text-destructive" />
-                          )}
+                          <span className="text-sm text-muted-foreground">{room.current} / {room.max}</span>
+                          {percentage > 90 && <AlertTriangle className="w-4 h-4 text-destructive" />}
                         </div>
                       </div>
-                      <Progress 
-                        value={percentage} 
-                        className={`h-2 ${percentage > 90 ? '[&>div]:bg-destructive' : percentage > 75 ? '[&>div]:bg-yellow-500' : ''}`}
-                      />
+                      <Progress value={percentage} className={`h-2 ${percentage > 90 ? '[&>div]:bg-destructive' : percentage > 75 ? '[&>div]:bg-yellow-500' : ''}`} />
                     </div>
                   );
                 })}
@@ -275,10 +254,7 @@ const Dashboard = () => {
 
               <div className="space-y-4">
                 {recentActivity.map((activity, index) => (
-                  <div 
-                    key={index}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-secondary/50 hover:bg-secondary transition-colors"
-                  >
+                  <div key={index} className="flex items-center gap-3 p-3 rounded-xl bg-secondary/50 hover:bg-secondary transition-colors">
                     <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
                       {activity.badge === 'VIP' ? (
                         <Crown className="w-5 h-5 text-yellow-500" />
@@ -290,11 +266,9 @@ const Dashboard = () => {
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-foreground truncate">{activity.name}</span>
                         {activity.badge && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            activity.badge === 'VIP' 
-                              ? 'bg-yellow-500/20 text-yellow-500' 
-                              : 'bg-primary/20 text-primary'
-                          }`}>{activity.badge}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${activity.badge === 'VIP' ? 'bg-yellow-500/20 text-yellow-500' : 'bg-primary/20 text-primary'}`}>
+                            {activity.badge}
+                          </span>
                         )}
                       </div>
                       <span className="text-xs text-muted-foreground">{activity.time}</span>
@@ -303,9 +277,7 @@ const Dashboard = () => {
                 ))}
               </div>
 
-              <Button variant="ghost" className="w-full mt-4">
-                View All Activity
-              </Button>
+              <Button variant="ghost" className="w-full mt-4">View All Activity</Button>
             </div>
 
           </div>

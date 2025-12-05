@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
-import { 
-  Search, 
-  Filter, 
-  Download, 
-  UserPlus, 
-  Mail, 
+"use client";
+
+import { useState, useEffect } from "react";
+import {
+  Search,
+  Filter,
+  Download,
+  UserPlus,
+  Mail,
   Phone,
   Check,
   X,
@@ -16,78 +18,152 @@ import {
   Pencil,
   Trash2,
   Send
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import Navigation from '@/components/Navigation';
-import { db } from '@/firebase/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
+import Navigation from "@/components/Navigation";
+import { db } from "@/firebase/firebase";
+import { collection, getDocs, doc, updateDoc, deleteDoc, query } from "firebase/firestore";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+import { useAuth } from "@/context/AuthContext"; // assume you have a hook for auth and tenant
 
 interface Guest {
   id: string;
+  firstName: string;
+  lastName: string;
   name: string;
   email: string;
   phone: string;
   companyOrIndividual: string;
-  ticketType: 'VIP' | 'General' | 'Speaker' | 'Press';
-  status: 'checked-in' | 'pending' | 'no-show';
+  ticketType: "VIP" | "General" | "Speaker" | "Press";
+  status: "checked-in" | "pending" | "no-show";
   checkedInAt?: string;
   registeredAt: string;
 }
 
 const Guests = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const { tenantId } = useAuth(); // tenant-aware
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [selectedGuests, setSelectedGuests] = useState<string[]>([]);
   const [guests, setGuests] = useState<Guest[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch guests from Firestore
+  const [viewGuest, setViewGuest] = useState<Guest | null>(null);
+  const [editGuest, setEditGuest] = useState<Guest | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Guest>>({});
+
+  // -----------------------------
+  // Fetch guests (tenant-aware)
+  // -----------------------------
   useEffect(() => {
+    if (!tenantId) return;
+
     const fetchGuests = async () => {
       setLoading(true);
       try {
-        const snapshot = await getDocs(collection(db, 'guests'));
-        const guestList: Guest[] = snapshot.docs.map(doc => {
+        const q = query(collection(db, "tenants", tenantId, "guests"));
+        const snapshot = await getDocs(q);
+        const guestList: Guest[] = snapshot.docs.map((doc) => {
           const data = doc.data();
           return {
             id: doc.id,
+            firstName: data.firstName,
+            lastName: data.lastName,
             name: `${data.firstName} ${data.lastName}`,
             email: data.email,
             phone: data.phone,
-            companyOrIndividual: data.companyOrIndividual|| '',
-            ticketType: data.ticketType || 'General',
-            status: data.checkedIn ? 'checked-in' : data.status || 'pending',
+            companyOrIndividual: data.companyOrIndividual || "",
+            ticketType: data.ticketType || "General",
+            status: data.checkedIn ? "checked-in" : data.status || "pending",
             checkedInAt: data.checkedInAt || (data.checkedIn ? new Date(data.checkedInAt || Date.now()).toLocaleTimeString() : undefined),
-            registeredAt: data.registeredAt || '',
+            registeredAt: data.registeredAt || "",
           };
         });
         setGuests(guestList);
       } catch (error) {
-        console.error('Error fetching guests:', error);
+        console.error("Error fetching guests:", error);
       } finally {
         setLoading(false);
       }
     };
-
     fetchGuests();
-  }, []);
+  }, [tenantId]);
 
-  const filteredGuests = guests.filter(guest => {
+  // -----------------------------
+  // CRUD operations (tenant-aware)
+  // -----------------------------
+  const handleCheckIn = async (guest: Guest) => {
+    if (!tenantId) return;
+    const status = guest.status === "checked-in" ? "pending" : "checked-in";
+    try {
+      const docRef = doc(db, "tenants", tenantId, "guests", guest.id);
+      await updateDoc(docRef, {
+        status,
+        checkedInAt: status === "checked-in" ? new Date().toISOString() : null,
+      });
+      setGuests((prev) =>
+        prev.map((g) =>
+          g.id === guest.id
+            ? { ...g, status, checkedInAt: status === "checked-in" ? new Date().toLocaleTimeString() : null }
+            : g
+        )
+      );
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleDeleteGuest = async (id: string) => {
+    if (!tenantId) return;
+    if (!confirm("Are you sure you want to delete this guest?")) return;
+    try {
+      const docRef = doc(db, "tenants", tenantId, "guests", id);
+      await deleteDoc(docRef);
+      setGuests((prev) => prev.filter((g) => g.id !== id));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleEditGuest = (guest: Guest) => {
+    setEditGuest(guest);
+    setEditForm({ ...guest });
+  };
+
+  const saveGuestEdits = async () => {
+    if (!tenantId || !editGuest) return;
+    try {
+      const docRef = doc(db, "tenants", tenantId, "guests", editGuest.id);
+      await updateDoc(docRef, editForm);
+      setGuests((prev) =>
+        prev.map((g) => (g.id === editGuest.id ? { ...g, ...editForm } : g))
+      );
+      setEditGuest(null);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  // -----------------------------
+  // Filter & select helpers
+  // -----------------------------
+  const filteredGuests = guests.filter((guest) => {
     const matchesSearch =
       guest.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       guest.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       guest.companyOrIndividual.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || guest.status === statusFilter;
+    const matchesStatus = statusFilter === "all" || guest.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
@@ -95,69 +171,66 @@ const Guests = () => {
     if (selectedGuests.length === filteredGuests.length) {
       setSelectedGuests([]);
     } else {
-      setSelectedGuests(filteredGuests.map(g => g.id));
+      setSelectedGuests(filteredGuests.map((g) => g.id));
     }
   };
 
   const toggleSelectGuest = (id: string) => {
-    setSelectedGuests(prev => 
-      prev.includes(id) 
-        ? prev.filter(gId => gId !== id)
-        : [...prev, id]
+    setSelectedGuests((prev) =>
+      prev.includes(id) ? prev.filter((gId) => gId !== id) : [...prev, id]
     );
   };
 
-  const getStatusBadge = (status: Guest['status']) => {
+  // -----------------------------
+  // Badges & export
+  // -----------------------------
+  const getStatusBadge = (status: Guest["status"]) => {
     switch (status) {
-      case 'checked-in':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-success/20 text-success text-xs">
-            <Check className="w-3 h-3" /> Checked In
-          </span>
-        );
-      case 'pending':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-500 text-xs">
-            Pending
-          </span>
-        );
-      case 'no-show':
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-destructive/20 text-destructive text-xs">
-            <X className="w-3 h-3" /> No Show
-          </span>
-        );
+      case "checked-in":
+        return <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-success/20 text-success text-xs"><Check className="w-3 h-3" /> Checked In</span>;
+      case "pending":
+        return <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-500 text-xs">Pending</span>;
+      case "no-show":
+        return <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-destructive/20 text-destructive text-xs"><X className="w-3 h-3" /> No Show</span>;
     }
   };
 
-  const getTicketBadge = (type: Guest['ticketType']) => {
+  const getTicketBadge = (type: Guest["ticketType"]) => {
     const colors: Record<string, string> = {
-      VIP: 'bg-yellow-500/20 text-yellow-500',
-      Speaker: 'bg-primary/20 text-primary',
-      Press: 'bg-purple-500/20 text-purple-500',
-      General: 'bg-muted text-muted-foreground',
+      VIP: "bg-yellow-500/20 text-yellow-500",
+      Speaker: "bg-primary/20 text-primary",
+      Press: "bg-purple-500/20 text-purple-500",
+      General: "bg-muted text-muted-foreground",
     };
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs ${colors[type]}`}>
-        {type === 'VIP' && <Crown className="w-3 h-3 inline mr-1" />}
-        {type}
-      </span>
-    );
+    return <span className={`px-2 py-1 rounded-full text-xs ${colors[type]}`}>{type === "VIP" && <Crown className="w-3 h-3 inline mr-1" />}{type}</span>;
   };
 
-  const stats = [
-    { label: 'Total Guests', value: guests.length },
-    { label: 'Checked In', value: guests.filter(g => g.status === 'checked-in').length },
-    { label: 'Pending', value: guests.filter(g => g.status === 'pending').length },
-    { label: 'No Shows', value: guests.filter(g => g.status === 'no-show').length },
-  ];
+  const exportToExcel = () => {
+    if (guests.length === 0) return;
+    const dataToExport = selectedGuests.length > 0 ? guests.filter((g) => selectedGuests.includes(g.id)) : guests;
+    const data = dataToExport.map((g) => ({
+      Name: g.name,
+      Email: g.email,
+      Phone: g.phone,
+      Company: g.companyOrIndividual,
+      Ticket: g.ticketType,
+      Status: g.status,
+      "Checked In At": g.checkedInAt || "—",
+      "Registered At": g.registeredAt || "—",
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Guests");
+    const wbout = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
+    saveAs(blob, "guests.xlsx");
+  };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-foreground">Loading guests...</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
-      
       <main className="pt-24 pb-12 px-6">
         <div className="container mx-auto max-w-7xl">
           {/* Header */}
@@ -167,7 +240,7 @@ const Guests = () => {
               <p className="text-muted-foreground">View and manage all event attendees</p>
             </div>
             <div className="flex items-center gap-3 mt-4 md:mt-0">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={exportToExcel}>
                 <Download className="w-4 h-4 mr-2" />
                 Export
               </Button>
@@ -176,16 +249,6 @@ const Guests = () => {
                 Add Guest
               </Button>
             </div>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            {stats.map((stat) => (
-              <div key={stat.label} className="glass rounded-xl p-4">
-                <div className="text-2xl font-bold text-foreground">{stat.value}</div>
-                <div className="text-sm text-muted-foreground">{stat.label}</div>
-              </div>
-            ))}
           </div>
 
           {/* Filters */}
@@ -221,14 +284,14 @@ const Guests = () => {
             </div>
           </div>
 
-          {/* Table */}
+          {/* Guest Table */}
           <div className="glass rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
                     <th className="p-4 text-left">
-                      <Checkbox 
+                      <Checkbox
                         checked={selectedGuests.length === filteredGuests.length && filteredGuests.length > 0}
                         onCheckedChange={toggleSelectAll}
                       />
@@ -244,12 +307,12 @@ const Guests = () => {
                 </thead>
                 <tbody>
                   {filteredGuests.map((guest) => (
-                    <tr 
-                      key={guest.id} 
+                    <tr
+                      key={guest.id}
                       className="border-b border-border/50 hover:bg-secondary/50 transition-colors"
                     >
                       <td className="p-4">
-                        <Checkbox 
+                        <Checkbox
                           checked={selectedGuests.includes(guest.id)}
                           onCheckedChange={() => toggleSelectGuest(guest.id)}
                         />
@@ -258,7 +321,7 @@ const Guests = () => {
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
                             <span className="text-sm font-medium text-primary">
-                              {guest.name.split(' ').map(n => n[0]).join('')}
+                              {guest.name.split(" ").map((n) => n[0]).join("")}
                             </span>
                           </div>
                           <div>
@@ -282,16 +345,17 @@ const Guests = () => {
                       <td className="p-4 hidden lg:table-cell">
                         <span className="text-sm text-foreground">{guest.companyOrIndividual}</span>
                       </td>
-                      <td className="p-4">
-                        {getTicketBadge(guest.ticketType)}
-                      </td>
-                      <td className="p-4">
-                        {getStatusBadge(guest.status)}
-                      </td>
+                      <td className="p-4">{getTicketBadge(guest.ticketType)}</td>
+                      <td className="p-4">{getStatusBadge(guest.status)}</td>
                       <td className="p-4 hidden lg:table-cell">
-                        <span className="text-sm text-muted-foreground">
-                          {guest.checkedInAt || '—'}
-                        </span>
+                        <span className="text-sm text-muted-foreground">{guest.checkedInAt || "—"}</span>
+                        <Button
+                          size="sm"
+                          className="ml-2"
+                          onClick={() => handleCheckIn(guest)}
+                        >
+                          {guest.status === "checked-in" ? "Undo" : "Check In"}
+                        </Button>
                       </td>
                       <td className="p-4 text-right">
                         <DropdownMenu>
@@ -301,11 +365,11 @@ const Guests = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setViewGuest(guest)}>
                               <Eye className="w-4 h-4 mr-2" />
                               View Details
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleEditGuest(guest)}>
                               <Pencil className="w-4 h-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
@@ -314,7 +378,10 @@ const Guests = () => {
                               Send Message
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive">
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => handleDeleteGuest(guest.id)}
+                            >
                               <Trash2 className="w-4 h-4 mr-2" />
                               Delete
                             </DropdownMenuItem>
@@ -326,27 +393,79 @@ const Guests = () => {
                 </tbody>
               </table>
             </div>
+          </div>
 
-            {/* Pagination */}
-            <div className="flex items-center justify-between p-4 border-t border-border">
-              <p className="text-sm text-muted-foreground">
-                Showing {filteredGuests.length} of {guests.length} guests
-              </p>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" disabled>
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <Button variant="outline" size="sm">1</Button>
-                <Button variant="ghost" size="sm">2</Button>
-                <Button variant="ghost" size="sm">3</Button>
-                <Button variant="outline" size="icon">
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
+          {/* Pagination placeholder */}
+          <div className="flex items-center justify-between p-4 border-t border-border mt-4">
+            <p className="text-sm text-muted-foreground">
+              Showing {filteredGuests.length} of {guests.length} guests
+            </p>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" disabled>
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="sm">1</Button>
+              <Button variant="ghost" size="sm">2</Button>
+              <Button variant="ghost" size="sm">3</Button>
+              <Button variant="outline" size="icon">
+                <ChevronRight className="w-4 h-4" />
+              </Button>
             </div>
           </div>
         </div>
       </main>
+
+      {/* View Guest Modal */}
+      {viewGuest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-2xl w-96">
+            <h2 className="text-xl font-bold mb-2">{viewGuest.name}</h2>
+            <p><strong>Email:</strong> {viewGuest.email}</p>
+            <p><strong>Phone:</strong> {viewGuest.phone}</p>
+            <p><strong>Company:</strong> {viewGuest.companyOrIndividual}</p>
+            <p><strong>Ticket Type:</strong> {viewGuest.ticketType}</p>
+            <p><strong>Status:</strong> {viewGuest.status}</p>
+            <p><strong>Checked In At:</strong> {viewGuest.checkedInAt || '—'}</p>
+            <p><strong>Registered At:</strong> {viewGuest.registeredAt}</p>
+            <Button className="mt-4 w-full" onClick={() => setViewGuest(null)}>Close</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Guest Modal */}
+      {editGuest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background p-6 rounded-2xl w-96">
+            <h2 className="text-xl font-bold mb-4">Edit {editGuest.name}</h2>
+            <div className="space-y-2">
+              <Input
+                placeholder="First Name"
+                value={editForm.firstName || ""}
+                onChange={(e) => setEditForm({...editForm, firstName: e.target.value})}
+              />
+              <Input
+                placeholder="Last Name"
+                value={editForm.lastName || ""}
+                onChange={(e) => setEditForm({...editForm, lastName: e.target.value})}
+              />
+              <Input
+                placeholder="Email"
+                value={editForm.email || ""}
+                onChange={(e) => setEditForm({...editForm, email: e.target.value})}
+              />
+              <Input
+                placeholder="Phone"
+                value={editForm.phone || ""}
+                onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
+              />
+            </div>
+            <div className="flex gap-2 mt-4">
+              <Button className="flex-1" onClick={saveGuestEdits}>Save</Button>
+              <Button className="flex-1" variant="outline" onClick={() => setEditGuest(null)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
