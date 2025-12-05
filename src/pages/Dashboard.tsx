@@ -1,20 +1,33 @@
-import { useState, useEffect } from 'react';
-import { 
-  Users, 
-  UserCheck, 
-  Clock, 
-  TrendingUp, 
+"use client";
+
+import { useState, useEffect } from "react";
+import {
+  Users,
+  UserCheck,
+  Clock,
   AlertTriangle,
   Crown,
   MapPin,
-  Activity
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import Navigation from '@/components/Navigation';
-import { db } from '@/firebase/firebase';
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+  Activity as ActivityIcon,
+} from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import Navigation from "@/components/Navigation";
+import { db } from "@/firebase/firebase";
+import {
+  collection,
+  getDocs,
+  query,
+  orderBy,
+  limit,
+  doc,
+  getDoc,
+} from "firebase/firestore";
+
+// -----------------------------
+// Types
+// -----------------------------
 interface Room {
   name: string;
   current: number;
@@ -29,37 +42,73 @@ interface Activity {
   badge?: string | null;
 }
 
+interface EventSettings {
+  eventName: string;
+  eventDate: string;
+  venue: string;
+  timezone: string;
+  capacity: number;
+}
+
+// -----------------------------
+// Dashboard Component
+// -----------------------------
 const Dashboard = () => {
-  const [checkedIn, setCheckedIn] = useState(0);
-  const [expected, setExpected] = useState(0);
-  const [capacity, setCapacity] = useState(1500);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [recentActivity, setRecentActivity] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Settings
+  const [settings, setSettings] = useState<EventSettings>({
+    eventName: "Event Dashboard",
+    eventDate: "",
+    venue: "",
+    timezone: "UTC",
+    capacity: 1500,
+  });
+
+  // Stats
+  const [checkedIn, setCheckedIn] = useState(0);
+  const [expected, setExpected] = useState(0);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [recentActivity, setRecentActivity] = useState<Activity[]>([]);
+
+  // -----------------------------
+  // Load Settings + Data
+  // -----------------------------
   useEffect(() => {
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
-        // 1️⃣ Fetch all guests
-        const guestsSnapshot = await getDocs(collection(db, 'guests'));
+        // 1️⃣ Load app settings
+        const settingsRef = doc(db, "app_settings", "global");
+        const settingsSnap = await getDoc(settingsRef);
+
+        if (settingsSnap.exists()) {
+          const s = settingsSnap.data() as EventSettings;
+          setSettings({
+            eventName: s.eventName || "Event Dashboard",
+            eventDate: s.eventDate || "",
+            venue: s.venue || "",
+            timezone: s.timezone || "UTC",
+            capacity: s.capacity || 1500,
+          });
+        }
+
+        // 2️⃣ Load guests
+        const guestsSnapshot = await getDocs(collection(db, "guests"));
         const allGuests = guestsSnapshot.docs.map(doc => doc.data());
-
-        // Calculate stats
-        const checkedInCount = allGuests.filter(g => g.checkedIn).length;
-        const expectedCount = allGuests.length;
+        const checkedInCount = allGuests.filter((g: any) => g.checkedIn).length;
         setCheckedIn(checkedInCount);
-        setExpected(expectedCount);
+        setExpected(allGuests.length);
 
-        // 2️⃣ Fetch rooms
-        const roomsSnapshot = await getDocs(collection(db, 'rooms'));
-        const roomsData: Room[] = roomsSnapshot.docs.map(doc => doc.data() as Room);
-        setRooms(roomsData);
+        // 3️⃣ Load rooms
+        const roomsSnapshot = await getDocs(collection(db, "rooms"));
+        setRooms(roomsSnapshot.docs.map(doc => doc.data() as Room));
 
-        // 3️⃣ Fetch recent activity (last 5)
+        // 4️⃣ Load recent activity (last 5)
         const recentSnapshot = await getDocs(
-          query(collection(db, 'activities'), orderBy('timestamp', 'desc'), limit(5))
+          query(collection(db, "activities"), orderBy("timestamp", "desc"), limit(5))
         );
+
         const recentData: Activity[] = recentSnapshot.docs.map(doc => {
           const data = doc.data();
           return {
@@ -67,13 +116,13 @@ const Dashboard = () => {
             type: data.type,
             action: data.action,
             time: new Date(data.timestamp?.toDate?.() || Date.now()).toLocaleTimeString(),
-            badge: data.badge || null
+            badge: data.badge || null,
           };
         });
         setRecentActivity(recentData);
 
       } catch (error) {
-        console.error('Error fetching dashboard data:', error);
+        console.error("Error loading dashboard data:", error);
       } finally {
         setLoading(false);
       }
@@ -82,25 +131,55 @@ const Dashboard = () => {
     fetchDashboardData();
   }, []);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-foreground">Loading dashboard...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-foreground">
+        Loading dashboard...
+      </div>
+    );
+  }
 
+  // -----------------------------
+  // Stats Cards
+  // -----------------------------
   const stats = [
-    { label: 'Checked In', value: checkedIn, icon: UserCheck, color: 'text-success', change: '+12%' },
-    { label: 'Expected', value: expected, icon: Users, color: 'text-primary', change: null },
-    { label: 'No Shows', value: expected - checkedIn, icon: AlertTriangle, color: 'text-destructive', change: '-3%' },
-    { label: 'Avg Check-in', value: '2.8s', icon: Clock, color: 'text-primary', change: '-0.4s' },
+    {
+      label: "Checked In",
+      value: checkedIn,
+      icon: UserCheck,
+      color: "text-success",
+      change: "+12%",
+    },
+    { label: "Expected", value: expected, icon: Users, color: "text-primary", change: null },
+    {
+      label: "No Shows",
+      value: expected - checkedIn,
+      icon: AlertTriangle,
+      color: "text-destructive",
+      change: "-3%",
+    },
+    { label: "Avg Check-in", value: "2.8s", icon: Clock, color: "text-primary", change: "-0.4s" },
   ];
 
+  // -----------------------------
+  // Render
+  // -----------------------------
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
+
       <main className="pt-24 pb-12 px-6">
         <div className="container mx-auto max-w-7xl">
+
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold" data-cy="dashboard-header">Event Dashboard</h1>
-              <p className="text-muted-foreground">Tech Summit 2024 • Live Now</p>
+              <h1 className="text-3xl font-bold" data-cy="dashboard-header">
+                {settings.eventName}
+              </h1>
+              <p className="text-muted-foreground">
+                {settings.venue} • Live Now
+              </p>
             </div>
             <div className="flex items-center gap-3 mt-4 md:mt-0">
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/20 text-success text-sm">
@@ -113,7 +192,7 @@ const Dashboard = () => {
 
           {/* Stats Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            {stats.map((stat) => (
+            {stats.map(stat => (
               <div key={stat.label} className="glass rounded-2xl p-6 group hover:border-primary/30 transition-all">
                 <div className="flex items-start justify-between mb-4">
                   <div className={`w-12 h-12 rounded-xl bg-secondary flex items-center justify-center ${stat.color}`}>
@@ -135,17 +214,18 @@ const Dashboard = () => {
             ))}
           </div>
 
-          {/* Main Content Grid */}
+          {/* Main Grid */}
           <div className="grid lg:grid-cols-3 gap-6">
-            {/* Capacity Overview */}
+
+            {/* Room Capacity */}
             <div className="lg:col-span-2 glass rounded-2xl p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-semibold text-foreground">Room Capacity</h2>
                 <Button variant="ghost" size="sm">View All</Button>
               </div>
-              
+
               <div className="space-y-6">
-                {rooms.map((room) => {
+                {rooms.map(room => {
                   const percentage = (room.current / room.max) * 100;
                   return (
                     <div key={room.name} className="space-y-2">
@@ -176,12 +256,12 @@ const Dashboard = () => {
               <div className="mt-8 p-4 rounded-xl bg-secondary/50 border border-border">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium text-foreground">Overall Venue Capacity</span>
-                  <span className="text-sm text-muted-foreground">{checkedIn} / {capacity}</span>
+                  <span className="text-sm text-muted-foreground">{checkedIn} / {settings.capacity}</span>
                 </div>
-                <Progress value={(checkedIn / capacity) * 100} className="h-3" />
+                <Progress value={(checkedIn / settings.capacity) * 100} className="h-3" />
                 <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-                  <span>{Math.round((checkedIn / capacity) * 100)}% filled</span>
-                  <span>{capacity - checkedIn} spots available</span>
+                  <span>{Math.round((checkedIn / settings.capacity) * 100)}% filled</span>
+                  <span>{settings.capacity - checkedIn} spots available</span>
                 </div>
               </div>
             </div>
@@ -190,9 +270,9 @@ const Dashboard = () => {
             <div className="glass rounded-2xl p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-semibold text-foreground">Recent Activity</h2>
-                <Activity className="w-5 h-5 text-primary animate-pulse" />
+                <ActivityIcon className="w-5 h-5 text-primary animate-pulse" />
               </div>
-              
+
               <div className="space-y-4">
                 {recentActivity.map((activity, index) => (
                   <div 
@@ -214,9 +294,7 @@ const Dashboard = () => {
                             activity.badge === 'VIP' 
                               ? 'bg-yellow-500/20 text-yellow-500' 
                               : 'bg-primary/20 text-primary'
-                          }`}>
-                            {activity.badge}
-                          </span>
+                          }`}>{activity.badge}</span>
                         )}
                       </div>
                       <span className="text-xs text-muted-foreground">{activity.time}</span>
@@ -224,12 +302,14 @@ const Dashboard = () => {
                   </div>
                 ))}
               </div>
-              
+
               <Button variant="ghost" className="w-full mt-4">
                 View All Activity
               </Button>
             </div>
+
           </div>
+
         </div>
       </main>
     </div>
