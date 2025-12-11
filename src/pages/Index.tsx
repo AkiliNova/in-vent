@@ -6,6 +6,8 @@ import HowItWorksSection from '@/components/HowItWorksSection';
 import PricingSection from '@/components/PricingSection';
 import CTASection from '@/components/CTASection';
 import Footer from '@/components/Footer';
+import UpcomingEvents from '@/components/UpcomingEvents';
+import { mockEvents } from '@/data/mockEvents';
 
 const Index = () => {
   return (
@@ -14,7 +16,8 @@ const Index = () => {
       <main>
         <HeroSection />
         <MetricsSection />
-        <FeaturesSection />
+        {/* <FeaturesSection /> */}
+        <UpcomingEvents events={mockEvents} />
         <HowItWorksSection />
         <PricingSection />
         <CTASection />

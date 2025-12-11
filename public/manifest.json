@@ -1,0 +1,20 @@
+{
+  "short_name": "In-Vent",
+  "name": "Modern Event App",
+  "icons": [
+    {
+      "src": "public/favicon.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "public/favicon.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "display": "standalone"
+}
