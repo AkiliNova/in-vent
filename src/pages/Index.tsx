@@ -15,7 +15,7 @@ const Index = () => {
       <Navigation />
       <main>
         <HeroSection />
-        <MetricsSection />
+        {/* <MetricsSection /> */}
         {/* <FeaturesSection /> */}
         <UpcomingEvents events={mockEvents} />
         <HowItWorksSection />

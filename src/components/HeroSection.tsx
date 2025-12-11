@@ -86,28 +86,43 @@ export default function HeroSection() {
           </p>
 
 
-<div className="w-full flex flex-col md:flex-row items-center gap-3 p-4 
-     bg-white border border-gray-300 rounded-full shadow-sm">
-
-
+<div
+  className="
+    w-full flex flex-col md:flex-row items-center 
+    gap-3 p-4 
+    bg-white border border-gray-300 
+    rounded-xl md:rounded-full 
+    shadow-sm
+  "
+>
   <input
     type="text"
     placeholder="Search Events and More!.."
-    className="flex-1 p-3 bg-transparent text-black placeholder-gray-500 
-               focus:outline-none"
+    className="
+      w-full md:flex-1 
+      p-3 
+      bg-transparent text-black placeholder-gray-500 
+      focus:outline-none
+    "
     value={searchQuery}
     onChange={(e) => setSearchQuery(e.target.value)}
   />
 
   <button
     type="submit"
-    className="px-6 py-3 bg-black text-white font-semibold rounded-full
-               hover:bg-gray-900 transition"
+    className="
+      w-full md:w-auto 
+      px-6 py-3 
+      bg-black text-white font-semibold 
+      rounded-xl md:rounded-full
+      hover:bg-gray-900 transition
+    "
     onClick={handleSearch}
   >
     Search
   </button>
 </div>
+
 
 
         </div>

@@ -15,7 +15,8 @@ interface UpcomingEventsProps {
 
 export default function UpcomingEvents({ events }: UpcomingEventsProps) {
   return (
-    <section className="py-16 bg-gray-50">
+    <section className="py-16 border border-gray-300 rounded-xl">
+
       <div className="container mx-auto px-4 md:px-6">
         <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-8">
           Upcoming Events
@@ -24,7 +25,7 @@ export default function UpcomingEvents({ events }: UpcomingEventsProps) {
           {events.map((event, idx) => (
             <div
               key={idx}
-              className="relative rounded-2xl overflow-hidden shadow-lg group hover:shadow-2xl transition-all duration-300 bg-white"
+              className="relative rounded-2xl overflow-hidden shadow-lg group hover:shadow-2xl transition-all duration-300"
             >
               {/* Event image */}
               <img
