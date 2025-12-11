@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { 
+import {
   Zap, LayoutDashboard, QrCode, ScanLine, Users, MessageSquare, Settings,
   Menu, X, House, LogOut
 } from 'lucide-react';
@@ -32,20 +32,22 @@ const Navigation = () => {
     }
   };
 
-  const navLinks = isLanding 
+  const navLinks = isLanding
     ? [
-        { href: '#features', label: 'Features' },
-        { href: '#how-it-works', label: 'How it Works' },
-        { href: '#pricing', label: 'Pricing' },
-      ]
+      { href: '#features', label: 'Events' },
+      { href: '#sport', label: 'Sports' },
+      { href: '#sport', label: 'Cities' },
+      { href: '#pricing', label: 'Help' },
+      { href: '#pricing', label: 'Blog' },
+    ]
     : [
-        { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { href: '/register', label: 'Register', icon: QrCode },
-        { href: '/scanner', label: 'Scanner', icon: ScanLine },
-        { href: '/guests', label: 'Guests', icon: Users },
-        { href: '/campaigns', label: 'Campaigns', icon: MessageSquare },
-        { href: '/settings', label: 'Settings', icon: Settings },
-      ];
+      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { href: '/register', label: 'Register', icon: QrCode },
+      { href: '/scanner', label: 'Scanner', icon: ScanLine },
+      { href: '/guests', label: 'Guests', icon: Users },
+      { href: '/campaigns', label: 'Campaigns', icon: MessageSquare },
+      { href: '/settings', label: 'Settings', icon: Settings },
+    ];
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 glass">
@@ -53,12 +55,16 @@ const Navigation = () => {
         <div className="flex items-center justify-between">
 
           {/* Logo */}
+          {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-              <Zap className="w-5 h-5 text-primary" />
-            </div>
-            <span className="text-xl font-bold text-foreground">IN-VENT</span>
+            <img
+              src="/assets/logo.png"
+              alt="IN-VENT Logo"
+              className="w-[200px] h-[60px] object-contain"
+            />
+
           </Link>
+
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-1">
@@ -70,11 +76,10 @@ const Navigation = () => {
                 <Link
                   key={link.href}
                   to={link.href}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                    isActive 
-                      ? 'bg-primary/20 text-primary' 
-                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${isActive
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                    }`}
                 >
                   {Icon && <Icon className="w-4 h-4" />}
                   {link.label}
@@ -84,9 +89,9 @@ const Navigation = () => {
 
             {/* Logout Button */}
             {user && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="flex items-center gap-2 ml-2"
                 onClick={handleLogout}
               >
@@ -105,7 +110,7 @@ const Navigation = () => {
                   </Link>
                 </Button>
                 <Button variant="hero" size="sm" asChild>
-                  <Link  to={user ? "/Dashboard" : "/onboarding"}>Get Started</Link>
+                  <Link to={user ? "/Dashboard" : "/onboarding"}>Sell Your Event</Link>
                 </Button>
               </>
             ) : (
@@ -114,9 +119,9 @@ const Navigation = () => {
               </Button>
             )}
 
-            <Button 
-              variant="ghost" 
-              size="icon" 
+            <Button
+              variant="ghost"
+              size="icon"
               className="md:hidden"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
@@ -137,11 +142,10 @@ const Navigation = () => {
                   <Link
                     key={link.href}
                     to={link.href}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                      isActive 
-                        ? 'bg-primary/20 text-primary' 
-                        : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                    }`}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
+                      ? 'bg-primary/20 text-primary'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                      }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     {Icon && <Icon className="w-5 h-5" />}

@@ -33,6 +33,8 @@ export default function HeroSection() {
   const [passengers, setPassengers] = useState({ Adults: 1, Children: 0, Infants: 0 });
   const [passengerDialogOpen, setPassengerDialogOpen] = useState(false);
   const [flightClass, setFlightClass] = useState("Economy");
+  const [searchCategory, setSearchCategory] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const passengerSummary = `${passengers.Adults} Adult${passengers.Adults !== 1 ? "s" : ""}, ${passengers.Children} Child${passengers.Children !== 1 ? "ren" : ""}, ${passengers.Infants} Infant${passengers.Infants !== 1 ? "s" : ""}`;
 
@@ -44,12 +46,17 @@ export default function HeroSection() {
     setPassengers(prev => ({ ...prev, [type]: Math.max(0, prev[type] - 1) }));
   };
 
+  const handleSearch = () => {
+    // Add your search logic here
+    console.log("Search:", { searchCategory, searchQuery });
+  };
+
   return (
     <section className="relative min-h-screen flex items-start md:items-center justify-center overflow-hidden py-16 md:py-32">
       {/* Background */}
       <div
         className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: "url('/images/hme_landing.png')" }}
+        style={{ backgroundImage: "url('/hme_landing.png')" }}
       />
       <div className="absolute inset-0 bg-black/25" />
 
@@ -57,236 +64,52 @@ export default function HeroSection() {
         {/* LEFT: Search panel */}
         <div className="lg:w-1/2  p-6 md:p-10 rounded-3xl shadow-lg animate-slide-up">
           {/* Header */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm mb-6 md:mb-8">
+          {/* <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-bold mb-6 md:mb-8">
             <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
             Now with offline-first architecture
-          </div>
-          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold text-foreground leading-tight mb-4 md:mb-6">
-            Event check-in, <span className="gradient-text">reimagined</span>
+          </div> */}
+
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight mb-4 md:mb-6">
+            <span className="inline-block">
+              <span className="text-[#F5658C] rotate-[-1deg] inline-block">Discover </span>{' '}
+              <span className="text-[#3ED2D1]">the Best </span>{' '}
+
+              <span className="text-[#F8D21F]">Local Events</span>{' '}
+            </span>
+            <span className="text-black inline-block ">and Things to do</span>
           </h1>
-          <p className="text-lg sm:text-xl text-muted-foreground mb-6 md:mb-10 max-w-full md:max-w-xl leading-relaxed">
-            Self-register in 30 seconds. Scan in 3. Real-time dashboards, instant SMS reach, and zero clipboard chaos—all from a $40 tablet at the door.
+
+
+
+          <p className="text-lg sm:text-xl font-bold text-black mb-6 md:mb-10 max-w-full md:max-w-xl leading-relaxed">
+            Search Events, Artist Performances, Festivals, and More!
           </p>
 
-          {/* Tabs */}
-          <div className="flex gap-2 mb-4 md:mb-6 flex-wrap">
-            {["Events", "Flights", "Holidays"].map((tab) => (
-              <button
-                key={tab}
-                className={`px-4 sm:px-6 py-2 rounded-t-lg font-medium ${
-                  activeTab === tab
-                    ? "border-t-4 border-white-700 gradient-text "
-                    : "text-gray-700"
-                }`}
-                onClick={() => setActiveTab(tab as any)}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
 
-          {/* Forms */}
-          <form className="flex flex-col gap-3 md:flex-row md:gap-3 mb-4 md:mb-6 flex-wrap">
-  {activeTab === "Events" && (
-    <>
-      <input
-        type="text"
-        placeholder="Event name"
-        className="flex-1 p-3 border border-gray-300 rounded-lg bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0"
-      />
-      <input
-        type="text"
-        placeholder="City"
-        className="flex-1 p-3 border border-gray-300 rounded-lg bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0"
-      />
-    </>
-  )}
-
- {activeTab === "Flights" && (
-  <div className="flex flex-col gap-3 md:gap-3 w-full">
-    {/* Trip type */}
-    <div className="relative">
-      <button
-        type="button"
-        className="w-full p-3 border border-primary/50 rounded-lg bg-transparent flex justify-between items-center gradient-text focus:outline-none"
-        onClick={() => setTripType(tripType === "roundtrip" ? "oneway" : "roundtrip")}
-      >
-        {tripType === "roundtrip" ? "Round Trip" : "One Way"}
-        <svg
-          className="w-4 h-4 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-    </div>
-
-    {/* Passenger & Class */}
-    <div className="relative">
-      <button
-        type="button"
-        className="w-full p-3 border border-primary/50 rounded-lg bg-transparent flex justify-between items-center gradient-text focus:outline-none"
-        onClick={() => setPassengerDialogOpen(true)}
-      >
-        {passengerSummary}
-        <svg
-          className="w-4 h-4 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {passengerDialogOpen && (
-        <div className="absolute top-full left-0 w-full bg-white border border-primary/20 rounded-lg shadow-lg p-4 z-50">
-          {["Adults", "Children", "Infants"].map((type) => (
-            <div key={type} className="flex justify-between items-center mb-2">
-              <span className="gradient-text font-semibold">{type}</span>
-              <div className="flex gap-2 items-center">
-                <button
-                  onClick={() => decrementPassenger(type)}
-                  className="px-2 py-1 bg-primary/20 rounded text-primary font-bold"
-                >
-                  -
-                </button>
-                <span className="font-semibold text-primary">{passengers[type]}</span>
-                <button
-                  onClick={() => incrementPassenger(type)}
-                  className="px-2 py-1 bg-primary/20 rounded text-primary font-bold"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-          ))}
-
-          <div className="mt-3">
-            <div className="mb-2 gradient-text font-semibold">Class</div>
-            <div className="flex gap-2 flex-wrap">
-              {["Economy", "Premium Economy", "Business", "First Class"].map((cls) => (
-                <button
-                  key={cls}
-                  onClick={() => setFlightClass(cls)}
-                  className={`px-3 py-1 rounded-lg font-semibold ${
-                    flightClass === cls
-                      ? "bg-gradient-to-r from-primary to-secondary text-white shadow-lg"
-                      : "bg-primary/10 text-primary"
-                  }`}
-                >
-                  {cls}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <button
-            className="mt-4 w-full bg-primary text-primary-foreground font-semibold rounded-md py-2 hover:bg-primary/90"
-            onClick={() => setPassengerDialogOpen(false)}
-          >
-            Done
-          </button>
-        </div>
-      )}
-    </div>
-
-    {/* From / To */}
-    <div className="flex flex-col md:flex-row gap-3">
-      <div className="relative flex-1">
-        <input
-          type="text"
-          placeholder="From"
-          className="w-full p-3 border border-primary/50 rounded-lg bg-white gradient-text placeholder-gradient-text focus:outline-none pl-10"
-        />
-        <svg
-          className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3" />
-        </svg>
-      </div>
-      <div className="relative flex-1">
-        <input
-          type="text"
-          placeholder="To"
-          className="w-full p-3 border border-primary/50 rounded-lg bg-white gradient-text placeholder-gradient-text focus:outline-none pl-10"
-        />
-        <svg
-          className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3" />
-        </svg>
-      </div>
-    </div>
-
-    {/* Departure / Return Dates */}
-    <div className="flex flex-col md:flex-row gap-3">
-      <input
-        type="date"
-        className="flex-1 p-3 border border-primary/50 rounded-lg bg-white gradient-text placeholder-gradient-text focus:outline-none"
-      />
-      {tripType === "roundtrip" && (
-        <input
-          type="date"
-          className="flex-1 p-3 border border-primary/50 rounded-lg bg-white gradient-text placeholder-gradient-text focus:outline-none"
-        />
-      )}
-    </div>
-  </div>
-)}
+<div className="w-full flex flex-col md:flex-row items-center gap-3 p-4 
+     bg-white border border-gray-300 rounded-full shadow-sm">
 
 
-
-
-  {activeTab === "Holidays" && (
-    <input
-      type="text"
-      placeholder="Location"
-      className="flex-1 p-3 border border-gray-300 rounded-lg bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0"
-    />
-  )}
+  <input
+    type="text"
+    placeholder="Search Events and More!.."
+    className="flex-1 p-3 bg-transparent text-black placeholder-gray-500 
+               focus:outline-none"
+    value={searchQuery}
+    onChange={(e) => setSearchQuery(e.target.value)}
+  />
 
   <button
     type="submit"
-    className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm ring-offset-background transition-all duration-300
-               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
-               disabled:pointer-events-none disabled:opacity-50
-               bg-primary text-primary-foreground font-semibold hover:bg-primary/90 hover:scale-105 hover:shadow-xl hover:shadow-primary/30
-               active:scale-100 h-9 rounded-md px-3"
+    className="px-6 py-3 bg-black text-white font-semibold rounded-full
+               hover:bg-gray-900 transition"
+    onClick={handleSearch}
   >
-    Find {activeTab}
+    Search
   </button>
-</form>
+</div>
 
 
-
-          {/* Footer info */}
-          <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-            {["No credit card", "GDPR compliant", "Setup in minutes"].map((item, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                <svg
-                  className="w-5 h-5 text-success flex-shrink-0"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-                {item}
-              </div>
-            ))}
-          </div>
         </div>
 
         {/* RIGHT: Event carousel */}
