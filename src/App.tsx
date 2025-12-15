@@ -19,6 +19,7 @@ import EventsDashboard from "./pages/admin/EventsDashboard";
 
 // 🔹 Import ProtectedRoute
 import ProtectedRoute from "@/components/ProtectedRoute";
+import EventPage from "./pages/[eventId]";
 
 const queryClient = new QueryClient();
 
@@ -88,6 +89,7 @@ const App = () => (
           </ProtectedRoute>
           } />
           <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/events/:tenantId/:eventId" element={<EventPage />} />
           <Route path="/onboarding" element={<OrganizerOnboarding />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -26,7 +26,7 @@ const Navigation = () => {
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      navigate('/admin/login'); // Redirect to login page after logout
+      navigate('/admin/login'); // Redirect after logout
     } catch (error) {
       console.error("Logout failed:", error);
     }
@@ -34,20 +34,21 @@ const Navigation = () => {
 
   const navLinks = isLanding
     ? [
-      { href: '#features', label: 'Events' },
-      { href: '#sport', label: 'Sports' },
-      { href: '#sport', label: 'Cities' },
-      { href: '#pricing', label: 'Help' },
-      { href: '#pricing', label: 'Blog' },
-    ]
+        { href: '#features', label: 'Events' },
+        { href: '#sport', label: 'Sports' },
+        { href: '#cities', label: 'Cities' },
+        { href: '#help', label: 'Help' },
+        { href: '#blog', label: 'Blog' },
+      ]
     : [
-      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { href: '/register', label: 'Register', icon: QrCode },
-      { href: '/scanner', label: 'Scanner', icon: ScanLine },
-      { href: '/guests', label: 'Guests', icon: Users },
-      { href: '/campaigns', label: 'Campaigns', icon: MessageSquare },
-      { href: '/settings', label: 'Settings', icon: Settings },
-    ];
+        { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { href: '/register', label: 'Register', icon: QrCode },
+        { href: '/scanner', label: 'Scanner', icon: ScanLine },
+        { href: '/guests', label: 'Guests', icon: Users },
+        { href: '/campaigns', label: 'Campaigns', icon: MessageSquare },
+        { href: '/events', label: 'Events', icon: House },
+        { href: '/settings', label: 'Settings', icon: Settings },
+      ];
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 glass">
@@ -55,16 +56,13 @@ const Navigation = () => {
         <div className="flex items-center justify-between">
 
           {/* Logo */}
-          {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
             <img
               src="/assets/logo.png"
               alt="IN-VENT Logo"
               className="w-[200px] h-[60px] object-contain"
             />
-
           </Link>
-
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-1">
@@ -76,10 +74,9 @@ const Navigation = () => {
                 <Link
                   key={link.href}
                   to={link.href}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${isActive
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                    }`}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                    isActive ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                  }`}
                 >
                   {Icon && <Icon className="w-4 h-4" />}
                   {link.label}
@@ -98,33 +95,40 @@ const Navigation = () => {
                 <LogOut className="w-4 h-4" /> Logout
               </Button>
             )}
+
+            {/* Landing Page Sign In / Dashboard */}
+            {isLanding && !user && (
+              <Button variant="ghost" size="sm" className="ml-2">
+                <Link to="/admin/login">Sign In</Link>
+              </Button>
+            )}
+            {isLanding && user && (
+              <Button variant="ghost" size="sm" className="ml-2">
+                <Link to="/dashboard">Dashboard</Link>
+              </Button>
+            )}
           </div>
 
           {/* Top-right buttons + mobile menu */}
           <div className="flex items-center gap-3">
-            {isLanding ? (
-              <>
-                <Button variant="ghost" size="sm" className="hidden sm:inline-flex" asChild>
-                  <Link to={user ? "/dashboard" : "/admin/login"}>
-                    {user ? "Dashboard" : "Sign In"}
-                  </Link>
-                </Button>
-                <Button
-  variant="hero"
-  size="sm"
-  asChild
-  className="bg-[#F32B81] hover:bg-[#E02575] text-white"
->
-  <Link to={user ? "/Dashboard" : "/onboarding"}>Sell Your Event</Link>
-</Button>
+            {isLanding && (
+              <Button
+                variant="hero"
+                size="sm"
+                asChild
+                className="bg-[#F32B81] hover:bg-[#E02575] text-white hidden md:inline-flex"
+              >
+                <Link to={user ? "/dashboard" : "/onboarding"}>Sell Your Event</Link>
+              </Button>
+            )}
 
-              </>
-            ) : (
+            {!isLanding && (
               <Button variant="ghost" size="sm" asChild>
                 <Link to="/">Back to Home</Link>
               </Button>
             )}
 
+            {/* Mobile menu button */}
             <Button
               variant="ghost"
               size="icon"
@@ -148,10 +152,9 @@ const Navigation = () => {
                   <Link
                     key={link.href}
                     to={link.href}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
-                      ? 'bg-primary/20 text-primary'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                      }`}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                      isActive ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                    }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     {Icon && <Icon className="w-5 h-5" />}
@@ -159,6 +162,17 @@ const Navigation = () => {
                   </Link>
                 );
               })}
+
+              {/* Mobile Landing Sign In / Dashboard */}
+              {isLanding && (
+                <Link
+                  to={user ? "/dashboard" : "/admin/login"}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg font-medium text-foreground hover:bg-secondary"
+                >
+                  {user ? "Dashboard" : "Sign In"}
+                </Link>
+              )}
 
               {/* Mobile Logout */}
               {user && (
@@ -171,6 +185,17 @@ const Navigation = () => {
                 >
                   <LogOut className="w-5 h-5" /> Logout
                 </button>
+              )}
+
+              {/* Mobile Sell Your Event */}
+              {isLanding && (
+                <Link
+                  to={user ? "/dashboard" : "/onboarding"}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg font-medium text-white bg-[#F32B81] hover:bg-[#E02575]"
+                >
+                  Sell Your Event
+                </Link>
               )}
             </div>
           </div>
