@@ -109,9 +109,15 @@ const Navigation = () => {
                     {user ? "Dashboard" : "Sign In"}
                   </Link>
                 </Button>
-                <Button variant="hero" size="sm" asChild>
-                  <Link to={user ? "/Dashboard" : "/onboarding"}>Sell Your Event</Link>
-                </Button>
+                <Button
+  variant="hero"
+  size="sm"
+  asChild
+  className="bg-[#F32B81] hover:bg-[#E02575] text-white"
+>
+  <Link to={user ? "/Dashboard" : "/onboarding"}>Sell Your Event</Link>
+</Button>
+
               </>
             ) : (
               <Button variant="ghost" size="sm" asChild>

@@ -39,6 +39,7 @@ interface FormData {
   guestId: string;
   status: "pending" | "checked-in" | "flagged";
   checkedInAt?: string;
+  amountPaid: number;
 }
 
 interface AppSettings {
@@ -66,6 +67,7 @@ const Registration = () => {
     agreeMarketing: false,
     guestId: '',
     status: "pending",
+    amountPaid: 0,
   });
 
   const [settings, setSettings] = useState<AppSettings>({
@@ -97,7 +99,7 @@ const Registration = () => {
     fetchSettings();
   }, [tenantId]);
 
-  const handleInputChange = (field: string, value: string | boolean) => {
+  const handleInputChange = (field: string, value: string | boolean | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -109,7 +111,9 @@ const Registration = () => {
     formData.guestCategory &&
     formData.companyOrIndividual;
 
-  const isStep2Valid = formData.agreeTerms;
+  const isStep2Valid =
+  formData.agreeTerms && formData.amountPaid >= 0;
+
 
   // -----------------------------
   // Submit Registration
@@ -253,6 +257,23 @@ const Registration = () => {
                   {settings.dietaryOptions.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <div className="mt-4">
+                <Label className="flex items-center gap-2">
+                  <Wallet className="w-4 h-4" />
+                  Amount Paid
+                </Label>
+                <Input
+                  type="number"
+                  min="0"
+                  className="h-12"
+                  value={formData.amountPaid}
+                  onChange={e =>
+                    handleInputChange("amountPaid", Number(e.target.value))
+                  }
+                  placeholder="Enter amount paid"
+                />
+              </div>
+
 
               <div className="mt-4">
                 <Label>Status</Label>
@@ -334,6 +355,7 @@ const Registration = () => {
                   agreeMarketing: false,
                   guestId: '',
                   status: "pending",
+                  amountPaid: 0, 
                 });
                 setTicketId(null);
                 setStep(1);

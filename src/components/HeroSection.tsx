@@ -62,70 +62,53 @@ export default function HeroSection() {
 
       <div className="container mx-auto px-4 md:px-6 relative z-10 flex flex-col lg:flex-row gap-10 lg:gap-16 items-start md:items-center">
         {/* LEFT: Search panel */}
-        <div className="lg:w-1/2  p-6 md:p-10 rounded-3xl shadow-lg animate-slide-up">
-          {/* Header */}
-          {/* <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-bold mb-6 md:mb-8">
-            <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            Now with offline-first architecture
-          </div> */}
+        <div className=" w-full pt-16 md:pt-6 p-6 md:p-10 rounded-3xl shadow-sm animate-slide-up 
+                bg-white/10 backdrop-blur-md border border-white/20 mx-auto">
 
-          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight mb-4 md:mb-6">
+          {/* Header: hidden on mobile */}
+          <h1 className="hidden md:block text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight mb-4 md:mb-6">
             <span className="inline-block">
               <span className="text-[#F5658C] rotate-[-1deg] inline-block">Discover </span>{' '}
               <span className="text-[#3ED2D1]">the Best </span>{' '}
-
-              <span className="text-[#F8D21F]">Local Events</span>{' '}
+              <span className="text-[#F8D21F]">Local Events</span>
             </span>
-            <span className="text-black inline-block ">and Things to do</span>
+            <span className="text-black inline-block">and Things to do</span>
           </h1>
 
-
-
-          <p className="text-lg sm:text-xl font-bold text-black mb-6 md:mb-10 max-w-full md:max-w-xl leading-relaxed">
-            Search Events, Artist Performances, Festivals, and More!
+          <p className="hidden md:block text-lg sm:text-xl font-semibold text-white mb-6 md:mb-10 max-w-full md:max-w-xl leading-relaxed">
+            Find concerts, festivals, and performances near you!
           </p>
 
+          {/* Search bar: full width on mobile */}
+          <div className="w-full flex items-center gap-3 p-3 bg-white/10 backdrop-blur-md rounded-full shadow-sm border border-white/20">
+            {/* Search icon */}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6 text-white/70 flex-shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"
+              />
+            </svg>
 
-<div
-  className="
-    w-full flex flex-col md:flex-row items-center 
-    gap-3 p-4 
-    bg-white border border-gray-300 
-    rounded-xl md:rounded-full 
-    shadow-sm
-  "
->
-  <input
-    type="text"
-    placeholder="Search Events and More!.."
-    className="
-      w-full md:flex-1 
-      p-3 
-      bg-transparent text-black placeholder-gray-500 
-      focus:outline-none
-    "
-    value={searchQuery}
-    onChange={(e) => setSearchQuery(e.target.value)}
-  />
-
-  <button
-    type="submit"
-    className="
-      w-full md:w-auto 
-      px-6 py-3 
-      bg-black text-white font-semibold 
-      rounded-xl md:rounded-full
-      hover:bg-gray-900 transition
-    "
-    onClick={handleSearch}
-  >
-    Search
-  </button>
-</div>
-
-
-
+            {/* Input */}
+            <input
+              type="text"
+              placeholder="Search for events, artists, or festivals"
+              className="flex-1 bg-transparent focus:outline-none text-white placeholder-white/70"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
+
+
 
         {/* RIGHT: Event carousel */}
         <div className="lg:w-1/2 w-full mt-8 lg:mt-0 relative">

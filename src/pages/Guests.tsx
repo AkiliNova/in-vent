@@ -49,6 +49,7 @@ interface Guest {
   status: "checked-in" | "pending" | "no-show";
   checkedInAt?: string;
   registeredAt: string;
+  amountPaid: 0;
 }
 
 const Guests = () => {
@@ -88,6 +89,7 @@ const Guests = () => {
             status: data.checkedIn ? "checked-in" : data.status || "pending",
             checkedInAt: data.checkedInAt || (data.checkedIn ? new Date(data.checkedInAt || Date.now()).toLocaleTimeString() : undefined),
             registeredAt: data.registeredAt || "",
+            amountPaid: data.amountPaid || 0,
           };
         });
         setGuests(guestList);
@@ -217,6 +219,7 @@ const Guests = () => {
       Status: g.status,
       "Checked In At": g.checkedInAt || "—",
       "Registered At": g.registeredAt || "—",
+      "Amount Paid": g.amountPaid,
     }));
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
@@ -300,6 +303,7 @@ const Guests = () => {
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground hidden md:table-cell">Contact</th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground hidden lg:table-cell">Company</th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">Ticket</th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">Amount Paid</th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground hidden lg:table-cell">Check-in</th>
                     <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
@@ -346,6 +350,7 @@ const Guests = () => {
                         <span className="text-sm text-foreground">{guest.companyOrIndividual}</span>
                       </td>
                       <td className="p-4">{getTicketBadge(guest.ticketType)}</td>
+                      <td className="p-4">Ksh {guest.amountPaid.toFixed(2)}</td>
                       <td className="p-4">{getStatusBadge(guest.status)}</td>
                       <td className="p-4 hidden lg:table-cell">
                         <span className="text-sm text-muted-foreground">{guest.checkedInAt || "—"}</span>

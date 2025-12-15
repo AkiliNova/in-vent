@@ -15,6 +15,7 @@ import NotFound from "./pages/NotFound";
 import AdminLogin from "./pages/admin/Login";
 import RoomsPage from "./pages/Rooms";
 import OrganizerOnboarding from "./pages/OrganizerOnboarding";
+import EventsDashboard from "./pages/admin/EventsDashboard";
 
 // 🔹 Import ProtectedRoute
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -78,6 +79,12 @@ const App = () => (
           element={
             <ProtectedRoute>
           <RoomsPage />
+          </ProtectedRoute>
+          } />
+          <Route path="/events" 
+          element={
+            <ProtectedRoute>
+          <EventsDashboard tenantId={localStorage.getItem('tenantId') || ''} />
           </ProtectedRoute>
           } />
           <Route path="/admin/login" element={<AdminLogin />} />
