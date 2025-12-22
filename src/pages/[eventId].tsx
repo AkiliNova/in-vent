@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { MapPin, Calendar, Share2 } from "lucide-react";
+
 interface EventData {
   title: string;
   description: string;
@@ -40,8 +41,13 @@ export default function EventPage() {
   const [otherEvents, setOtherEvents] = useState<OtherEvent[]>([]);
   const [ticketQuantities, setTicketQuantities] = useState<{ [key: string]: number }>({});
   const [formData, setFormData] = useState({ fullName: "", email: "", phone: "", agreeTerms: false });
+
+  // ------------------ Iframe Modal ------------------
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
-  const API_URL = "http://tikooh.akilinova.tech/payment/create_payment.php";
+  const [iframeLoading, setIframeLoading] = useState(true);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+  const API_URL = "https://tikooh.akilinova.tech/payment/create_payment.php";
 
   // ------------------ Fetch Event ------------------
   useEffect(() => {
@@ -56,7 +62,6 @@ export default function EventPage() {
           const data = snap.data() as EventData;
           setEvent(data);
 
-          // Initialize ticket quantities if packages exist
           if (data.packages) {
             const initialQuantities: { [key: string]: number } = {};
             data.packages.forEach(pkg => (initialQuantities[pkg.name] = 0));
@@ -163,8 +168,9 @@ export default function EventPage() {
       }
 
       toast({ title: "Opening payment..." });
-
       setIframeUrl(data.iframe_url);
+      setIframeLoading(true);
+      setShowPaymentModal(true);
 
     } catch (err: any) {
       console.error(err);
@@ -176,80 +182,42 @@ export default function EventPage() {
     }
   };
 
-
   // ------------------ Render ------------------
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
       <main className="pt-24 px-6 container mx-auto max-w-7xl">
 
-        {/* Top Section */}
+        {/* Event Details */}
         <div className="flex flex-col lg:flex-row gap-8 mb-12">
-          {/* Left Div */}
           <div className="flex-1 space-y-6">
-            {/* Main Image */}
             {event.images?.[0] && (
               <div className="w-full rounded-xl bg-gray-100 overflow-hidden">
-                <img
-                  src={event.images[0]}
-                  alt={event.title}
-                  className="w-full h-auto object-contain"
-                />
+                <img src={event.images[0]} alt={event.title} className="w-full h-auto object-contain" />
               </div>
             )}
 
-
-
-            {/* Share Buttons */}
             <div className="flex gap-3">
               <Button size="sm"><Share2 className="w-4 h-4" /> Share</Button>
               <Button size="sm">Facebook</Button>
               <Button size="sm">Twitter</Button>
             </div>
 
-            {/* Host */}
             <p className="text-muted-foreground font-semibold">Hosted by {event.host}</p>
-
-            {/* Description */}
             <p>{event.description}</p>
-
-            {/* Dates */}
             <div className="flex gap-4">
               <Calendar /> <span>{new Date(event.startDate).toLocaleString()} - {new Date(event.endDate).toLocaleString()}</span>
             </div>
-
-            {/* Gallery */}
-            {event.images?.length > 1 && (
-              <div className="grid grid-cols-2 gap-2">
-                {event.images.slice(1).map((img, idx) => (
-                  <img key={idx} src={img} alt={`${event.title}-${idx}`} className="rounded-xl w-full h-48 object-cover" />
-                ))}
-              </div>
-            )}
-
-            {/* Location */}
-            <div className="space-y-1">
-              <p><strong>Location:</strong> {event.locationName}</p>
-              <a href={event.locationMapLink} target="_blank" className="text-primary hover:underline">View on Map</a>
-            </div>
           </div>
 
-          {/* Right Div */}
+          {/* Booking Card */}
           <div className="w-full lg:w-[350px] space-y-6">
-            {/* Title */}
             <h2 className="text-2xl font-bold">{event.title}</h2>
-
-            {/* Location */}
             <div className="flex items-center gap-2"><MapPin /> <span>{event.locationName}</span></div>
 
-            {/* Date */}
-            <div className="flex items-center gap-2"><Calendar /> <span>{new Date(event.startDate).toLocaleString()}</span></div>
-
-            {/* Booking Card */}
             <div className="p-6 rounded-xl shadow-md space-y-4 border border-white">
               <p className="font-semibold">Get your tickets for "{event.title}"</p>
 
-              {/* Packages */}
               {event.packages?.map(pkg => (
                 <div key={pkg.name} className="flex justify-between items-center">
                   <span>{pkg.name} - KES {pkg.price.toLocaleString()}</span>
@@ -261,7 +229,6 @@ export default function EventPage() {
                 </div>
               ))}
 
-              {/* Booking Form */}
               <div className="space-y-2">
                 <div>
                   <Label>Full Name</Label>
@@ -283,7 +250,6 @@ export default function EventPage() {
 
               <Button variant="hero" onClick={handleBookTicket}>Book Ticket</Button>
             </div>
-
           </div>
         </div>
 
@@ -303,6 +269,39 @@ export default function EventPage() {
             </div>
           </div>
         )}
+
+        {/* -------------------- Payment Modal -------------------- */}
+        {showPaymentModal && iframeUrl && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-3xl h-[80vh] rounded-xl overflow-hidden relative shadow-lg">
+              
+              {/* Close button */}
+              <button
+                onClick={() => setShowPaymentModal(false)}
+                className="absolute top-3 right-3 text-gray-700 hover:text-gray-900 z-10 text-xl font-bold"
+              >
+                ✕
+              </button>
+
+              {/* Loader */}
+              {iframeLoading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white z-20">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mb-2"></div>
+                  <span>Loading payment...</span>
+                </div>
+              )}
+
+              {/* Iframe */}
+              <iframe
+                src={iframeUrl}
+                className="w-full h-full"
+                onLoad={() => setIframeLoading(false)}
+                title="Pesapal Payment"
+              />
+            </div>
+          </div>
+        )}
+
       </main>
     </div>
   );

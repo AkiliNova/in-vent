@@ -107,7 +107,7 @@ export default function UpcomingEvents() {
                     bg-primary text-primary-foreground font-semibold
                     hover:bg-primary/90 hover:scale-105 transition"
                 >
-                  Sell Ticket
+                  Book Now
                 </a>
               </div>
             </div>
