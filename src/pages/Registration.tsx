@@ -40,11 +40,32 @@ interface FormData {
   status: "pending" | "checked-in" | "flagged";
   checkedInAt?: string;
   amountPaid: number;
+  customFields: Record<string, any>;
 }
 
 interface AppSettings {
   dietaryOptions: string[];
 }
+type DynamicFieldType =
+  | "text"
+  | "number"
+  | "email"
+  | "select"
+  | "checkbox"
+  | "textarea";
+
+interface DynamicField {
+  id: string;
+  label: string;
+  type: DynamicFieldType;
+  required?: boolean;
+  step: 1 | 2;
+  order?: number;
+  placeholder?: string;
+  options?: string[];
+  enabled?: boolean;
+}
+
 
 // -----------------------------
 // Registration Component
@@ -68,6 +89,7 @@ const Registration = () => {
     guestId: '',
     status: "pending",
     amountPaid: 0,
+    customFields: {},
   });
 
   const [settings, setSettings] = useState<AppSettings>({
@@ -98,10 +120,49 @@ const Registration = () => {
     };
     fetchSettings();
   }, [tenantId]);
+  const [dynamicFields, setDynamicFields] = useState<DynamicField[]>([]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+
+    const loadDynamicFields = async () => {
+      const snap = await getDocs(
+        collection(db, `tenants/${tenantId}/registration_fields`)
+      );
+
+      const fields = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as DynamicField))
+        .filter(f => f.enabled !== false)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      setDynamicFields(fields);
+
+      // initialize values
+      const values: Record<string, any> = {};
+      fields.forEach(f => {
+        values[f.id] = f.type === "checkbox" ? false : "";
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        customFields: {
+          ...values,
+          ...prev.customFields,
+        },
+      }));
+
+    };
+
+    loadDynamicFields();
+  }, [tenantId]);
 
   const handleInputChange = (field: string, value: string | boolean | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
+  const dynamicFieldsValid = (step: 1 | 2) =>
+    dynamicFields
+      .filter(f => f.required && f.step === step)
+      .every(f => Boolean(formData.customFields[f.id]));
 
   const isStep1Valid =
     formData.firstName &&
@@ -109,10 +170,11 @@ const Registration = () => {
     formData.email &&
     formData.phone &&
     formData.guestCategory &&
-    formData.companyOrIndividual;
+    formData.companyOrIndividual
+    && dynamicFieldsValid(1);
 
   const isStep2Valid =
-  formData.agreeTerms && formData.amountPaid >= 0;
+    formData.agreeTerms && formData.amountPaid >= 0 && dynamicFieldsValid(2);
 
 
   // -----------------------------
@@ -175,6 +237,61 @@ const Registration = () => {
       setIsSubmitting(false);
     }
   };
+  const renderDynamicField = (field: DynamicField) => {
+    const value = formData.customFields[field.id];
+
+    const update = (val: any) =>
+      setFormData(p => ({
+        ...p,
+        customFields: { ...p.customFields, [field.id]: val }
+      }));
+
+    switch (field.type) {
+      case "text":
+      case "email":
+      case "number":
+        return (
+          <Input
+            type={field.type}
+            placeholder={field.placeholder}
+            value={value}
+            onChange={e => update(e.target.value)}
+          />
+        );
+
+      case "textarea":
+        return (
+          <textarea
+            className="w-full rounded-md border p-3"
+            placeholder={field.placeholder}
+            value={value}
+            onChange={e => update(e.target.value)}
+          />
+        );
+
+      case "select":
+        return (
+          <Select value={value} onValueChange={update}>
+            <SelectTrigger>
+              <SelectValue placeholder={field.placeholder} />
+            </SelectTrigger>
+            <SelectContent>
+              {field.options?.map(opt => (
+                <SelectItem key={opt} value={opt}>
+                  {opt}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case "checkbox":
+        return (
+          <Checkbox checked={value} onCheckedChange={update} />
+        );
+    }
+  };
+
 
   // -----------------------------
   // Render
@@ -237,6 +354,18 @@ const Registration = () => {
                   <Input className="h-12" value={formData.companyOrIndividual} onChange={e => handleInputChange("companyOrIndividual", e.target.value)} />
                 </div>
               </div>
+              {dynamicFields
+                .filter(f => f.step === 1)
+                .map(field => (
+                  <div key={field.id} className="mt-4">
+                    <Label>
+                      {field.label}
+                      {field.required && " *"}
+                    </Label>
+                    {renderDynamicField(field)}
+                  </div>
+                ))}
+
 
               <Button variant="hero" size="xl" className="w-full mt-6" disabled={!isStep1Valid} onClick={() => setStep(2)}>
                 Continue <ArrowRight className="w-5 h-5" />
@@ -296,6 +425,18 @@ const Registration = () => {
                   ))}
                 </div>
               </div>
+              {dynamicFields
+                .filter(f => f.step === 2)
+                .map(field => (
+                  <div key={field.id} className="mt-4">
+                    <Label>
+                      {field.label}
+                      {field.required && " *"}
+                    </Label>
+                    {renderDynamicField(field)}
+                  </div>
+                ))}
+
 
               <div className="space-y-4 pt-4 border-t border-border">
                 <div className="flex items-start space-x-3">
@@ -355,7 +496,8 @@ const Registration = () => {
                   agreeMarketing: false,
                   guestId: '',
                   status: "pending",
-                  amountPaid: 0, 
+                  amountPaid: 0,
+                  customFields: {},
                 });
                 setTicketId(null);
                 setStep(1);

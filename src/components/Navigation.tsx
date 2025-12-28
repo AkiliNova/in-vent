@@ -43,6 +43,7 @@ const Navigation = () => {
     : [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { href: '/register', label: 'Register', icon: QrCode },
+        { href: '/fields', label: 'Fields', icon: LayoutDashboard },
         { href: '/scanner', label: 'Scanner', icon: ScanLine },
         { href: '/guests', label: 'Guests', icon: Users },
         { href: '/campaigns', label: 'Campaigns', icon: MessageSquare },

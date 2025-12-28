@@ -76,7 +76,7 @@ export default function HeroSection() {
   }, [searchQuery, events]);
 
   if (loading) return <p className="text-center mt-16">Loading events...</p>;
-  if (!events.length) return null;
+  // if (!events.length) return <p className="text-center mt-16">No events found.</p>;
 
   return (
     <section className="relative min-h-screen flex items-start md:items-center justify-center overflow-hidden py-16 md:py-32">

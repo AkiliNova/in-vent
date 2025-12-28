@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   Filter,
@@ -50,12 +51,14 @@ interface Guest {
   checkedInAt?: string;
   registeredAt: string;
   amountPaid: 0;
+  customFields?: Record<string, any>;
 }
 
 const Guests = () => {
   const { tenantId } = useAuth(); // tenant-aware
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [ticketFilter, setTicketFilter] = useState<"all" | Guest["ticketType"]>("all");
   const [selectedGuests, setSelectedGuests] = useState<string[]>([]);
   const [guests, setGuests] = useState<Guest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,6 +93,7 @@ const Guests = () => {
             checkedInAt: data.checkedInAt || (data.checkedIn ? new Date(data.checkedInAt || Date.now()).toLocaleTimeString() : undefined),
             registeredAt: data.registeredAt || "",
             amountPaid: data.amountPaid || 0,
+            customFields: data.customFields || {},
           };
         });
         setGuests(guestList);
@@ -165,9 +169,16 @@ const Guests = () => {
       guest.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       guest.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       guest.companyOrIndividual.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "all" || guest.status === statusFilter;
-    return matchesSearch && matchesStatus;
+
+    const matchesStatus =
+      statusFilter === "all" || guest.status === statusFilter;
+
+    const matchesTicket =
+      ticketFilter === "all" || guest.ticketType === ticketFilter;
+
+    return matchesSearch && matchesStatus && matchesTicket;
   });
+
 
   const toggleSelectAll = () => {
     if (selectedGuests.length === filteredGuests.length) {
@@ -206,21 +217,50 @@ const Guests = () => {
     };
     return <span className={`px-2 py-1 rounded-full text-xs ${colors[type]}`}>{type === "VIP" && <Crown className="w-3 h-3 inline mr-1" />}{type}</span>;
   };
+  const formatDate = (isoString: string | undefined) => {
+    if (!isoString) return "—";
+    const date = new Date(isoString);
+    return date.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   const exportToExcel = () => {
     if (guests.length === 0) return;
-    const dataToExport = selectedGuests.length > 0 ? guests.filter((g) => selectedGuests.includes(g.id)) : guests;
-    const data = dataToExport.map((g) => ({
-      Name: g.name,
-      Email: g.email,
-      Phone: g.phone,
-      Company: g.companyOrIndividual,
-      Ticket: g.ticketType,
-      Status: g.status,
-      "Checked In At": g.checkedInAt || "—",
-      "Registered At": g.registeredAt || "—",
-      "Amount Paid": g.amountPaid,
-    }));
+
+    const dataToExport =
+      selectedGuests.length > 0
+        ? guests.filter((g) => selectedGuests.includes(g.id))
+        : guests;
+
+    const data = dataToExport.map((g) => {
+      // Map customFields keys (fieldId) to labels
+      const mappedCustomFields: Record<string, any> = {};
+      if (g.customFields) {
+        Object.entries(g.customFields).forEach(([fieldId, value]) => {
+          const label = registrationFields[fieldId] || fieldId;
+          mappedCustomFields[label] = value;
+        });
+      }
+
+      return {
+        Name: g.name,
+        Email: g.email,
+        Phone: g.phone,
+        Company: g.companyOrIndividual,
+        Ticket: g.ticketType,
+        Status: g.status,
+        "Checked In At": formatDate(g.checkedInAt),
+        "Registered At": formatDate(g.registeredAt),
+        "Amount Paid": g.amountPaid,
+        ...mappedCustomFields,
+      };
+    });
+
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Guests");
@@ -228,6 +268,25 @@ const Guests = () => {
     const blob = new Blob([wbout], { type: "application/octet-stream" });
     saveAs(blob, "guests.xlsx");
   };
+
+  const [registrationFields, setRegistrationFields] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!tenantId) return;
+
+    const fetchFields = async () => {
+      const snap = await getDocs(collection(db, `tenants/${tenantId}/registration_fields`));
+      const fieldsMap: Record<string, string> = {};
+      snap.docs.forEach(doc => {
+        const data = doc.data();
+        fieldsMap[doc.id] = data.label; // map fieldId => label
+      });
+      setRegistrationFields(fieldsMap);
+    };
+
+    fetchFields();
+  }, [tenantId]);
+const navigate = useNavigate();
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
@@ -247,7 +306,11 @@ const Guests = () => {
                 <Download className="w-4 h-4 mr-2" />
                 Export
               </Button>
-              <Button variant="hero" size="sm">
+              <Button
+                variant="hero"
+                size="sm"
+                onClick={() => navigate("/register")}
+              >
                 <UserPlus className="w-4 h-4 mr-2" />
                 Add Guest
               </Button>
@@ -278,6 +341,20 @@ const Guests = () => {
                   <SelectItem value="no-show">No Show</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={ticketFilter} onValueChange={(v) => setTicketFilter(v as any)}>
+                <SelectTrigger className="w-full md:w-48 h-11">
+                  <Crown className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="Ticket type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Tickets</SelectItem>
+                  <SelectItem value="VIP">VIP</SelectItem>
+                  <SelectItem value="General">General</SelectItem>
+                  <SelectItem value="Speaker">Speaker</SelectItem>
+                  <SelectItem value="Press">Press</SelectItem>
+                </SelectContent>
+              </Select>
+
               {selectedGuests.length > 0 && (
                 <Button variant="outline">
                   <Send className="w-4 h-4 mr-2" />
@@ -286,6 +363,7 @@ const Guests = () => {
               )}
             </div>
           </div>
+
 
           {/* Guest Table */}
           <div className="glass rounded-2xl overflow-hidden">
@@ -306,6 +384,7 @@ const Guests = () => {
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">Amount Paid</th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">Status</th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground hidden lg:table-cell">Check-in</th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">Custom Fields</th>
                     <th className="p-4 text-right text-sm font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
@@ -337,23 +416,19 @@ const Guests = () => {
                       <td className="p-4 hidden md:table-cell">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Mail className="w-3 h-3" />
-                            {guest.email}
+                            <Mail className="w-3 h-3" /> {guest.email}
                           </div>
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Phone className="w-3 h-3" />
-                            {guest.phone}
+                            <Phone className="w-3 h-3" /> {guest.phone}
                           </div>
                         </div>
                       </td>
-                      <td className="p-4 hidden lg:table-cell">
-                        <span className="text-sm text-foreground">{guest.companyOrIndividual}</span>
-                      </td>
+                      <td className="p-4 hidden lg:table-cell">{guest.companyOrIndividual}</td>
                       <td className="p-4">{getTicketBadge(guest.ticketType)}</td>
                       <td className="p-4">Ksh {guest.amountPaid.toFixed(2)}</td>
                       <td className="p-4">{getStatusBadge(guest.status)}</td>
                       <td className="p-4 hidden lg:table-cell">
-                        <span className="text-sm text-muted-foreground">{guest.checkedInAt || "—"}</span>
+                        <span className="text-sm text-muted-foreground">{formatDate(guest.checkedInAt) || "—"}</span>
                         <Button
                           size="sm"
                           className="ml-2"
@@ -362,6 +437,22 @@ const Guests = () => {
                           {guest.status === "checked-in" ? "Undo" : "Check In"}
                         </Button>
                       </td>
+                      <td className="p-4">
+                        <div className="flex flex-col gap-1 text-sm text-foreground">
+                          {guest.customFields
+                            ? Object.entries(guest.customFields).map(([fieldId, value]) => (
+                              <div key={fieldId}>
+                                <span className="font-medium">
+                                  {registrationFields[fieldId] || fieldId}:
+                                </span>{" "}
+                                {value.toString()}
+                              </div>
+                            ))
+                            : <span className="text-muted-foreground">—</span>
+                          }
+                        </div>
+                      </td>
+
                       <td className="p-4 text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -383,10 +474,7 @@ const Guests = () => {
                               Send Message
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => handleDeleteGuest(guest.id)}
-                            >
+                            <DropdownMenuItem className="text-destructive" onClick={() => handleDeleteGuest(guest.id)}>
                               <Trash2 className="w-4 h-4 mr-2" />
                               Delete
                             </DropdownMenuItem>
@@ -399,6 +487,7 @@ const Guests = () => {
               </table>
             </div>
           </div>
+
 
           {/* Pagination placeholder */}
           <div className="flex items-center justify-between p-4 border-t border-border mt-4">
@@ -432,6 +521,21 @@ const Guests = () => {
             <p><strong>Status:</strong> {viewGuest.status}</p>
             <p><strong>Checked In At:</strong> {viewGuest.checkedInAt || '—'}</p>
             <p><strong>Registered At:</strong> {viewGuest.registeredAt}</p>
+            <p><strong>Amount Paid:</strong> Ksh {viewGuest.amountPaid.toFixed(2)}</p>
+            <div className="mt-4">
+              <h3 className="font-medium mb-2">Custom Fields:</h3>
+              {viewGuest.customFields ? (
+                <div className="space-y-1">
+                  {Object.entries(viewGuest.customFields).map(([fieldId, value]) => (
+                    <p key={fieldId}>
+                      <strong>{registrationFields[fieldId] || fieldId}:</strong> {value.toString()}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground">No custom fields.</p>
+              )}
+            </div>
             <Button className="mt-4 w-full" onClick={() => setViewGuest(null)}>Close</Button>
           </div>
         </div>
@@ -446,22 +550,22 @@ const Guests = () => {
               <Input
                 placeholder="First Name"
                 value={editForm.firstName || ""}
-                onChange={(e) => setEditForm({...editForm, firstName: e.target.value})}
+                onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
               />
               <Input
                 placeholder="Last Name"
                 value={editForm.lastName || ""}
-                onChange={(e) => setEditForm({...editForm, lastName: e.target.value})}
+                onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
               />
               <Input
                 placeholder="Email"
                 value={editForm.email || ""}
-                onChange={(e) => setEditForm({...editForm, email: e.target.value})}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
               />
               <Input
                 placeholder="Phone"
                 value={editForm.phone || ""}
-                onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
               />
             </div>
             <div className="flex gap-2 mt-4">

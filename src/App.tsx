@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import Registration from "./pages/Registration";
+import AdminFields from "./pages/RegistrationFields";
 import Scanner from "./pages/Scanner";
 import Guests from "./pages/Guests";
 import Campaigns from "./pages/Campaigns";
@@ -53,6 +54,12 @@ const App = () => (
            <Registration />
            </ProtectedRoute>
            } />
+          <Route path="/fields" 
+          element={
+            <ProtectedRoute>  
+          <AdminFields />
+          </ProtectedRoute>
+          } />
           <Route path="/scanner"
            element={
            <ProtectedRoute>
