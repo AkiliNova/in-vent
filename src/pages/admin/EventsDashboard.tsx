@@ -61,6 +61,7 @@ const EventsDashboard = ({ tenantId }: { tenantId: string }) => {
   const [images, setImages] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [step, setStep] = useState(1);
 
   const eventsRef = collection(db, `tenants/${tenantId}/events`);
 
@@ -89,6 +90,7 @@ const EventsDashboard = ({ tenantId }: { tenantId: string }) => {
       locationMapLink: '',
     });
     setImages([]);
+    setStep(1);
     setModalOpen(true);
   };
 
@@ -105,6 +107,7 @@ const EventsDashboard = ({ tenantId }: { tenantId: string }) => {
       locationMapLink: event.locationMapLink || '',
     });
     setImages([]);
+    setStep(1);
     setModalOpen(true);
   };
 
@@ -177,6 +180,7 @@ const EventsDashboard = ({ tenantId }: { tenantId: string }) => {
       setModalOpen(false);
       setImages([]);
       setUploadProgress(0);
+      setStep(1);
     } catch (error: any) {
       console.error(error);
       toast({ title: 'Failed to Save', description: error.message, variant: 'destructive' });
@@ -256,113 +260,182 @@ const EventsDashboard = ({ tenantId }: { tenantId: string }) => {
       </main>
 
       {/* Modal */}
-     <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-  <DialogContent className="max-w-lg w-full rounded-3xl p-6 shadow-lg max-h-[80vh] overflow-y-auto">
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+  <DialogContent
+    className="
+      w-full
+      max-w-3xl
+      md:max-w-4xl
+      h-[80vh]
+      md:h-[75vh]
+      rounded-3xl
+      p-6
+      shadow-xl
+      overflow-y-auto
+      scrollbar-none
+    "
+  >
     <DialogHeader>
-      <DialogTitle>{editingEvent ? 'Edit Event' : 'Add Event'}</DialogTitle>
-      <DialogDescription>Fill in event details below and upload images.</DialogDescription>
+      <DialogTitle className="text-2xl font-bold">
+        {editingEvent ? "Edit Event" : "Add Event"} - Step {step}/3
+      </DialogTitle>
+      <DialogDescription className="text-sm text-muted-foreground">
+        Fill in event details below and upload images.
+      </DialogDescription>
     </DialogHeader>
 
-    <div className="space-y-4 mt-2">
-      {/* Form Fields */}
-      <div className="flex flex-col">
-        <Label htmlFor="event-title">Title</Label>
-        <Input
-          id="event-title"
-          value={form.title}
-          onChange={(e) => setForm({ ...form, title: e.target.value })}
-        />
-      </div>
+    <div className="space-y-4 mt-4">
+      {/* STEP 1 */}
+      {step === 1 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex flex-col">
+            <Label htmlFor="event-title">Title</Label>
+            <Input
+              id="event-title"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+            />
+          </div>
 
-      <div className="flex flex-col">
-        <Label htmlFor="event-price">Price</Label>
-        <Input
-          id="event-price"
-          type="number"
-          value={form.price}
-          onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
-        />
-      </div>
+          <div className="flex flex-col">
+            <Label htmlFor="event-price">Price</Label>
+            <Input
+              id="event-price"
+              type="number"
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+            />
+          </div>
 
-      <div className="flex flex-col">
-        <Label htmlFor="host">Host</Label>
-        <Input
-          id="host"
-          value={form.host}
-          onChange={(e) => setForm({ ...form, host: e.target.value })}
-        />
-      </div>
+          <div className="flex flex-col md:col-span-2">
+            <Label htmlFor="description">Description</Label>
+            <textarea
+              id="description"
+              rows={4}
+              className="
+                border
+                rounded
+                p-2
+                w-full
+                resize-none
+                bg-transparent
+                text-white
+                placeholder-white/70
+                focus:outline-none
+                focus:ring-2
+                focus:ring-primary
+                focus:ring-opacity-50
+              "
+              placeholder="Enter event description"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+          </div>
+        </div>
+      )}
 
-      <div className="flex flex-col">
-        <Label htmlFor="description">Description</Label>
-        <textarea
-          id="description"
-          rows={4}
-          className="border rounded p-2"
-          value={form.description}
-          onChange={(e) => setForm({ ...form, description: e.target.value })}
-        />
-      </div>
+      {/* STEP 2 */}
+      {step === 2 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex flex-col">
+            <Label htmlFor="startDate">Start Date</Label>
+            <Input
+              id="startDate"
+              type="datetime-local"
+              value={form.startDate}
+              onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+            />
+          </div>
 
-      <div className="flex flex-col">
-        <Label htmlFor="startDate">Start Date</Label>
-        <Input
-          id="startDate"
-          type="datetime-local"
-          value={form.startDate}
-          onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-        />
-      </div>
+          <div className="flex flex-col">
+            <Label htmlFor="endDate">End Date</Label>
+            <Input
+              id="endDate"
+              type="datetime-local"
+              value={form.endDate}
+              onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+            />
+          </div>
 
-      <div className="flex flex-col">
-        <Label htmlFor="endDate">End Date</Label>
-        <Input
-          id="endDate"
-          type="datetime-local"
-          value={form.endDate}
-          onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-        />
-      </div>
+          <div className="flex flex-col">
+            <Label htmlFor="host">Host</Label>
+            <Input
+              id="host"
+              value={form.host}
+              onChange={(e) => setForm({ ...form, host: e.target.value })}
+            />
+          </div>
 
-      <div className="flex flex-col">
-        <Label htmlFor="locationName">Location Name</Label>
-        <Input
-          id="locationName"
-          value={form.locationName}
-          onChange={(e) => setForm({ ...form, locationName: e.target.value })}
-        />
-      </div>
+          <div className="flex flex-col">
+            <Label htmlFor="locationName">Location Name</Label>
+            <Input
+              id="locationName"
+              value={form.locationName}
+              onChange={(e) => setForm({ ...form, locationName: e.target.value })}
+            />
+          </div>
 
-      <div className="flex flex-col">
-        <Label htmlFor="locationMapLink">Map Link</Label>
-        <Input
-          id="locationMapLink"
-          value={form.locationMapLink}
-          onChange={(e) => setForm({ ...form, locationMapLink: e.target.value })}
-        />
-      </div>
+          <div className="flex flex-col md:col-span-2">
+            <Label htmlFor="locationMapLink">Map Link</Label>
+            <Input
+              id="locationMapLink"
+              value={form.locationMapLink}
+              onChange={(e) => setForm({ ...form, locationMapLink: e.target.value })}
+            />
+          </div>
+        </div>
+      )}
 
-      <div className="flex flex-col">
-        <Label htmlFor="event-images">Images</Label>
-        <input
-          type="file"
-          id="event-images"
-          multiple
-          accept="image/*"
-          onChange={handleImageChange}
-        />
-        {uploadProgress > 0 && <Progress value={uploadProgress} className="mt-2" />}
-      </div>
+      {/* STEP 3 */}
+      {step === 3 && (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col md:col-span-2">
+            <Label htmlFor="event-images">Images</Label>
+            <input
+              type="file"
+              id="event-images"
+              multiple
+              accept="image/*"
+              onChange={handleImageChange}
+              className="mt-1"
+            />
+            {uploadProgress > 0 && (
+              <Progress value={uploadProgress} className="mt-2" />
+            )}
+          </div>
+        </div>
+      )}
     </div>
 
-    <DialogFooter className="mt-4 flex justify-end gap-2">
-      <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
-      <Button variant="hero" onClick={saveEvent} disabled={isSubmitting}>
-        {isSubmitting ? 'Saving...' : editingEvent ? 'Update' : 'Add'}
+    <DialogFooter className="mt-6 flex flex-col sm:flex-row justify-end gap-3">
+      <Button
+        variant="outline"
+        onClick={() => step > 1 ? setStep(step - 1) : setModalOpen(false)}
+      >
+        {step > 1 ? "Back" : "Cancel"}
       </Button>
+      {step < 3 ? (
+        <Button
+          variant="hero"
+          onClick={() => setStep(step + 1)}
+          className="w-full sm:w-auto"
+        >
+          Next
+        </Button>
+      ) : (
+        <Button
+          variant="hero"
+          onClick={saveEvent}
+          disabled={isSubmitting}
+          className="w-full sm:w-auto"
+        >
+          {isSubmitting ? "Saving..." : editingEvent ? "Update" : "Add"}
+        </Button>
+      )}
     </DialogFooter>
   </DialogContent>
 </Dialog>
+
 
     </div>
   );

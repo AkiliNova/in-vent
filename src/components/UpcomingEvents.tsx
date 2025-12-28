@@ -28,7 +28,6 @@ export default function UpcomingEvents() {
       try {
         const q = query(
           collectionGroup(db, "events"),
-          where("startDate", ">=", new Date().toISOString()),
           orderBy("startDate", "asc")
         );
 

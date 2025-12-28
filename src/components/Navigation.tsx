@@ -123,11 +123,11 @@ const Navigation = () => {
               </Button>
             )}
 
-            {!isLanding && (
+            {/* {!isLanding && (
               <Button variant="ghost" size="sm" asChild>
                 <Link to="/">Back to Home</Link>
               </Button>
-            )}
+            )} */}
 
             {/* Mobile menu button */}
             <Button

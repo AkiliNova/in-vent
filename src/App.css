@@ -11,6 +11,15 @@
   will-change: filter;
   transition: filter 300ms;
 }
+/* Hide scrollbars */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 .logo:hover {
   filter: drop-shadow(0 0 2em #646cffaa);
 }

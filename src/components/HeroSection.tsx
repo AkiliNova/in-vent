@@ -25,41 +25,64 @@ export default function HeroSection() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Fetch events from Firestore
-  useEffect(() => {
-    const fetchEvents = async () => {
-      try {
-        const q = query(
-          collectionGroup(db, "events"),
-          where("startDate", ">=", new Date().toISOString()),
-          orderBy("startDate", "asc")
-        );
+useEffect(() => {
+  let isMounted = true; // flag to prevent setting state after unmount
 
-        const snapshot = await getDocs(q);
+  const fetchEvents = async () => {
+    try {
+      console.log("Fetching events...");
 
-        const data = snapshot.docs.map(doc => {
-          const e = doc.data() as any;
-          return {
-            id: doc.id,
-            title: e.title,
-            price: e.price,
-            images: e.images || [],
-            tenantId: e.tenantId,
-            startDate: e.startDate,
-            link: `/events/${e.tenantId}/${doc.id}`,
-          };
-        });
+      const q = query(
+        collectionGroup(db, "events"),
+        orderBy("startDate", "asc")
+      );
 
-        setEvents(data);
-        setFilteredEvents(data);
-      } catch (err) {
-        console.error("Failed to fetch hero events", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+      console.log("Query prepared:", q);
 
-    fetchEvents();
-  }, []);
+      const snapshot = await getDocs(q);
+      console.log("Snapshot fetched:", snapshot);
+
+      if (!isMounted) return;
+
+      console.log("Snapshot size:", snapshot.size);
+      snapshot.docs.forEach(doc => {
+        console.log("Doc ID:", doc.id, "Data:", doc.data());
+      });
+
+      const data = snapshot.docs.map(doc => {
+        const e = doc.data() as any;
+        console.log("Mapping event:", e);
+        return {
+          id: doc.id,
+          title: e.title,
+          price: e.price,
+          images: e.images || [],
+          tenantId: e.tenantId,
+          startDate: e.startDate,
+          link: `/events/${e.tenantId}/${doc.id}`,
+        };
+      });
+
+      console.log("Mapped data:", data);
+
+      setEvents(data);
+      setFilteredEvents(data);
+    } catch (err) {
+      console.error("Failed to fetch hero events", err);
+    } finally {
+      if (isMounted) setLoading(false);
+    }
+  };
+
+  fetchEvents();
+
+  return () => {
+    isMounted = false; // prevent state updates after unmount
+  };
+}, []);
+
+
+
 
   // Filter events based on search query
   useEffect(() => {
