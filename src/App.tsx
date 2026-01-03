@@ -22,6 +22,7 @@ import EventsDashboard from "./pages/admin/EventsDashboard";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import EventPage from "./pages/[eventId]";
 import PaymentResponsePage from "./pages/PaymentResponsePage";
+import EventsPage from "./pages/Events";
 
 const queryClient = new QueryClient();
 
@@ -100,6 +101,7 @@ const App = () => (
           <Route path="/events/:tenantId/:eventId" element={<EventPage />} />
           <Route path="/payment-response" element={<PaymentResponsePage />} />
           <Route path="/onboarding" element={<OrganizerOnboarding />} />
+          <Route path="/search-events" element={<EventsPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

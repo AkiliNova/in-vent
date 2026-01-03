@@ -1,10 +1,11 @@
 import { Zap } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const Footer = () => {
   const links = {
     Product: ['Features', 'Pricing', 'Integrations', 'API'],
-    Company: ['About', 'Blog', 'Careers', 'Press'],
-    Resources: ['Documentation', 'Help Center', 'Community', 'Status'],
+    Company: ['About', 'Blog', 'Careers', 'Refund Policy'],
+    Resources: ['Documentation', 'Help Center', 'Terms & Conditions', 'Status'],
     Legal: ['Privacy', 'Terms', 'Security', 'GDPR'],
   };
 
@@ -18,11 +19,17 @@ const Footer = () => {
               <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
                 <Zap className="w-5 h-5 text-primary" />
               </div>
-              <span className="text-xl font-bold text-foreground">IN-VENT</span>
+              <Link to="/" className="flex items-center gap-2">
+                          <img
+                            src="/assets/logo.png"
+                            alt="IN-VENT Logo"
+                            className="w-[200px] h-[60px] object-contain"
+                          />
+                        </Link>
             </div>
             <p className="text-muted-foreground text-sm mb-6 max-w-xs">
-              The smart event check-in system that turns chaotic clipboards 
-              into seamless experiences.
+                The smart event Ticketting booking andcheck-in system that turns chaotic clipboards 
+                into seamless experiences.
             </p>
             <div className="flex gap-4">
               {['twitter', 'linkedin', 'github'].map((social) => (
@@ -57,7 +64,7 @@ const Footer = () => {
 
         <div className="border-t border-border mt-12 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-muted-foreground text-sm">
-            © 2024 IN-VENT Smart System. All rights reserved.
+            © 2026 Tikooh. All rights reserved.
           </p>
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
             <a href="#" className="hover:text-foreground transition-colors">Privacy Policy</a>

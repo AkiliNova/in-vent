@@ -6,7 +6,6 @@ import {
   getDocs,
   orderBy,
   query,
-  where,
 } from "firebase/firestore";
 import { db } from "@/firebase/firebase";
 
@@ -42,8 +41,7 @@ export default function UpcomingEvents() {
             price: e.price,
             image: e.images?.[0],
             startDate: e.startDate,
-            tenantId: e.tenantId,               // include tenantId
-            link: `/events/${e.tenantId}/${doc.id}`, // dynamic event page
+            link: `/events/${e.tenantId}/${doc.id}`,
           };
         });
 
@@ -79,37 +77,51 @@ export default function UpcomingEvents() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {events.map(event => (
-            <div
+            <a
               key={event.id}
-              className="relative rounded-2xl overflow-hidden shadow-lg group hover:shadow-2xl transition-all duration-300"
+              href={event.link}
+              className="
+                group relative block rounded-2xl overflow-hidden
+                shadow-lg hover:shadow-2xl
+                transition-all duration-300
+                h-96 md:h-[26rem] lg:h-[28rem]
+                focus:outline-none focus:ring-4 focus:ring-black/30
+              "
             >
-              {/* Event image */}
+              {/* Background Image */}
               <img
                 src={event.image}
                 alt={event.title}
-                className="w-full h-64 object-cover transition-transform duration-500 group-hover:scale-105"
+                className="
+                  absolute inset-0 w-full h-full object-cover
+                  transition-transform duration-500
+                  group-hover:scale-110
+                "
               />
 
-              {/* Event details */}
-              <div className="p-4 flex flex-col gap-2">
-                <h3 className="text-lg md:text-xl font-semibold">
+              {/* Gradient Overlay */}
+              <div className="
+                absolute inset-0
+                bg-gradient-to-t from-black/80 via-black/40 to-transparent
+                opacity-80 group-hover:opacity-90
+                transition-opacity duration-300
+              " />
+
+              {/* Content */}
+              <div className="absolute inset-0 p-8 flex flex-col justify-end gap-4">
+                <h3 className="text-xl md:text-2xl font-bold text-white drop-shadow-lg">
                   {event.title}
                 </h3>
 
-                <span className="text-primary font-bold">
+                <span className="text-2xl font-bold text-white drop-shadow-lg">
                   KES {event.price.toLocaleString()}
                 </span>
 
-                <a
-                  href={event.link}
-                  className="mt-2 inline-flex items-center justify-center h-10 rounded-md px-4
-                    bg-primary text-primary-foreground font-semibold
-                    hover:bg-primary/90 hover:scale-105 transition"
-                >
-                  Book Now
-                </a>
+                <span className="text-sm text-white/90 font-medium">
+                  Tap to view details →
+                </span>
               </div>
-            </div>
+            </a>
           ))}
         </div>
       </div>
