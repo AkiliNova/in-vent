@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '@/firebase/firebase';
 import { Link } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
@@ -37,11 +37,10 @@ export default function BlogPage() {
       try {
         const q = query(
           collection(db, 'blog_posts'),
-          where('published', '==', true),
           orderBy('createdAt', 'desc')
         );
         const snap = await getDocs(q);
-        const data = snap.docs.map(d => {
+        const data = snap.docs.filter(d => d.data().published === true).map(d => {
           const p = d.data();
           const wordCount = (p.content || '').split(/\s+/).length;
           return {
