@@ -120,10 +120,10 @@ export default function Footer() {
               <a href="mailto:support@tikooh.com" className="flex items-center gap-2 text-sm text-white/50 hover:text-white transition-colors">
                 <Mail className="w-4 h-4 text-[#3ED2D1]" /> support@tikooh.com
               </a>
-              <a href="tel:+254700000000" className="flex items-center gap-2 text-sm text-white/50 hover:text-white transition-colors">
-                <Phone className="w-4 h-4 text-[#3ED2D1]" /> +254 700 000 000
+              <a href="tel:+254705094881" className="flex items-center gap-2 text-sm text-white/50 hover:text-white transition-colors">
+                <Phone className="w-4 h-4 text-[#3ED2D1]" /> +254 705 094 881
               </a>
-              <a href="https://wa.me/254700000000" target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-white/50 hover:text-white transition-colors">
+              <a href="https://wa.me/254705094881" target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-white/50 hover:text-white transition-colors">
                 <MessageCircle className="w-4 h-4 text-[#3ED2D1]" /> WhatsApp Support
               </a>
               <div className="flex items-center gap-2 text-sm text-white/50">

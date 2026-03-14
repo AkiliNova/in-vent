@@ -265,23 +265,23 @@ export default function HelpPage() {
                     <p className="text-muted-foreground text-xs mt-1">Reply within 24 hours</p>
                   </a>
                   <a
-                    href="tel:+254700000000"
+                    href="tel:+254705094881"
                     className="glass rounded-2xl p-6 hover:border-primary/30 transition-colors text-center group"
                   >
                     <Phone className="w-8 h-8 text-[#3ED2D1] mx-auto mb-3 group-hover:scale-110 transition-transform" />
                     <h3 className="font-semibold text-foreground mb-1">Call Us</h3>
-                    <p className="text-muted-foreground text-xs">+254 700 000 000</p>
+                    <p className="text-muted-foreground text-xs">+254 705 094 881</p>
                     <p className="text-muted-foreground text-xs mt-1">Mon–Fri, 9am–6pm EAT</p>
                   </a>
                   <a
-                    href="https://wa.me/254700000000"
+                    href="https://wa.me/254705094881"
                     target="_blank"
                     rel="noreferrer"
                     className="glass rounded-2xl p-6 hover:border-primary/30 transition-colors text-center group"
                   >
                     <MessageCircle className="w-8 h-8 text-[#F8D21F] mx-auto mb-3 group-hover:scale-110 transition-transform" />
                     <h3 className="font-semibold text-foreground mb-1">WhatsApp</h3>
-                    <p className="text-muted-foreground text-xs">+254 700 000 000</p>
+                    <p className="text-muted-foreground text-xs">+254 705 094 881</p>
                     <p className="text-muted-foreground text-xs mt-1">Fastest response</p>
                   </a>
                 </div>
