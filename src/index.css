@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Fredoka:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -49,7 +49,8 @@
     --shadow-card: 0 4px 24px hsl(0 0% 0% / 0.3);
     --shadow-elevated: 0 8px 40px hsl(0 0% 0% / 0.4);
 
-    --font-display: 'Cherry Bomb One', system-ui, sans-serif;
+    --font-display: 'Fredoka', system-ui, sans-serif;
+    --font-heading: 'Fredoka One', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
 
     --sidebar-background: 222 47% 8%;
@@ -79,7 +80,10 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    font-family: var(--font-display);
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
   }
 }
 

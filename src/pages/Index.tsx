@@ -7,19 +7,18 @@ import PricingSection from '@/components/PricingSection';
 import CTASection from '@/components/CTASection';
 import Footer from '@/components/Footer';
 import UpcomingEvents from '@/components/UpcomingEvents';
-import { mockEvents } from '@/data/mockEvents';
 
 const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
       <main>
-          <HeroSection />
-        {/* <MetricsSection /> */}
-        {/* <FeaturesSection /> */}
+        <HeroSection />
+        <MetricsSection />
         <UpcomingEvents />
-        {/* <HowItWorksSection />
-        <PricingSection /> */}
+        <FeaturesSection />
+        <HowItWorksSection />
+        <PricingSection />
         <CTASection />
       </main>
       <Footer />

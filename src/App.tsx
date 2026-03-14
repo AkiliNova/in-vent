@@ -23,6 +23,13 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import EventPage from "./pages/[eventId]";
 import PaymentResponsePage from "./pages/PaymentResponsePage";
 import EventsPage from "./pages/Events";
+import MyTickets from "./pages/MyTickets";
+import PromoCodes from "./pages/PromoCodes";
+import Payouts from "./pages/Payouts";
+import Blog from "./pages/Blog";
+import BlogPost from "./pages/BlogPost";
+import Help from "./pages/Help";
+import BlogManager from "./pages/admin/BlogManager";
 
 const queryClient = new QueryClient();
 
@@ -102,6 +109,34 @@ const App = () => (
           <Route path="/payment-response" element={<PaymentResponsePage />} />
           <Route path="/onboarding" element={<OrganizerOnboarding />} />
           <Route path="/search-events" element={<EventsPage />} />
+          <Route path="/my-tickets" element={<MyTickets />} />
+          <Route
+            path="/promo-codes"
+            element={
+              <ProtectedRoute>
+                <PromoCodes />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payouts"
+            element={
+              <ProtectedRoute>
+                <Payouts />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/blog" element={<Blog />} />
+          <Route path="/blog/:postId" element={<BlogPost />} />
+          <Route path="/help" element={<Help />} />
+          <Route
+            path="/blog-manager"
+            element={
+              <ProtectedRoute>
+                <BlogManager />
+              </ProtectedRoute>
+            }
+          />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

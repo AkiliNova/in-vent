@@ -5,7 +5,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard, QrCode, ScanLine, Users, MessageSquare, Settings,
-  Menu, X, House, LogOut
+  Menu, X, House, LogOut, Tag, Wallet, Ticket, ChevronDown, BookOpen
 } from 'lucide-react';
 import { auth } from "@/firebase/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -23,12 +23,20 @@ const Navigation = () => {
   const [user, setUser] = useState<any>(null);
   const [openSports, setOpenSports] = useState(false);
   const [openCities, setOpenCities] = useState(false);
+  const [mobileSportsOpen, setMobileSportsOpen] = useState(false);
+  const [mobileCitiesOpen, setMobileCitiesOpen] = useState(false);
 
   // Landing page detection
   const isLanding = [
     '/',
-    '/search-events'
-  ].includes(location.pathname) || location.pathname.startsWith('/events');
+    '/search-events',
+    '/blog',
+    '/help',
+    '/my-tickets',
+    '/onboarding',
+  ].includes(location.pathname) ||
+    location.pathname.startsWith('/events') ||
+    location.pathname.startsWith('/blog/');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -51,19 +59,25 @@ const Navigation = () => {
         { href: '/search-events', label: 'Events' },
         { href: '#sport', label: 'Sports' }, // Placeholder for dropdown
         { href: '#cities', label: 'Cities' }, // Placeholder for dropdown
-        { href: '#help', label: 'Help' },
-        { href: '#blog', label: 'Blog' },
+        { href: '/help', label: 'Help' },
+        { href: '/blog', label: 'Blog' },
       ]
     : [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { href: '/register', label: 'Register', icon: QrCode },
-        { href: '/fields', label: 'Fields', icon: LayoutDashboard },
         { href: '/scanner', label: 'Scanner', icon: ScanLine },
         { href: '/guests', label: 'Guests', icon: Users },
-        { href: '/campaigns', label: 'Campaigns', icon: MessageSquare },
         { href: '/events', label: 'Events', icon: House },
+        { href: '/campaigns', label: 'Campaigns', icon: MessageSquare },
+        { href: '/promo-codes', label: 'Promos', icon: Tag },
+        { href: '/payouts', label: 'Payouts', icon: Wallet },
+        { href: '/blog-manager', label: 'Blog', icon: BookOpen },
+        { href: '/register', label: 'Register', icon: QrCode },
         { href: '/settings', label: 'Settings', icon: Settings },
       ];
+
+  const publicExtraLinks = [
+    { href: '/my-tickets', label: 'My Tickets', icon: Ticket },
+  ];
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 glass">
@@ -153,6 +167,18 @@ const Navigation = () => {
               </Button>
             )}
 
+            {/* Public extra links (My Tickets) */}
+            {isLanding && publicExtraLinks.map(link => (
+              <Link
+                key={link.href}
+                to={link.href}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              >
+                <link.icon className="w-4 h-4" />
+                {link.label}
+              </Link>
+            ))}
+
             {/* Landing Sign In / Dashboard */}
             {isLanding && !user && (
               <Button variant="ghost" size="sm" className="ml-2">
@@ -215,39 +241,72 @@ const Navigation = () => {
               );
             })}
 
-            {/* Mobile Sports */}
+            {/* Mobile Sports Dropdown */}
             <div className="flex flex-col">
-              <span className="px-4 py-2 font-medium text-foreground">Sports</span>
-              {sports.map(sport => (
-                <button
-                  key={sport}
-                  className="text-left px-6 py-2 hover:bg-primary/20 rounded"
-                  onClick={() => {
-                    navigate(`/search-events?type=${encodeURIComponent(sport)}`);
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  {sport}
-                </button>
-              ))}
+              <button
+                className="flex items-center justify-between px-4 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                onClick={() => setMobileSportsOpen(!mobileSportsOpen)}
+              >
+                <span className="font-medium">Sports</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${mobileSportsOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {mobileSportsOpen && (
+                <div className="ml-4 mt-1 flex flex-col gap-0.5">
+                  {sports.map(sport => (
+                    <button
+                      key={sport}
+                      className="text-left px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-primary/10 transition-colors"
+                      onClick={() => {
+                        navigate(`/search-events?type=${encodeURIComponent(sport)}`);
+                        setMobileMenuOpen(false);
+                      }}
+                    >
+                      {sport}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Mobile Cities */}
+            {/* Mobile Cities Dropdown */}
             <div className="flex flex-col">
-              <span className="px-4 py-2 font-medium text-foreground">Cities</span>
-              {counties.map(city => (
-                <button
-                  key={city}
-                  className="text-left px-6 py-2 hover:bg-primary/20 rounded"
-                  onClick={() => {
-                    navigate(`/search-events?city=${encodeURIComponent(city)}`);
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  {city}
-                </button>
-              ))}
+              <button
+                className="flex items-center justify-between px-4 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                onClick={() => setMobileCitiesOpen(!mobileCitiesOpen)}
+              >
+                <span className="font-medium">Cities</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${mobileCitiesOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {mobileCitiesOpen && (
+                <div className="ml-4 mt-1 flex flex-col gap-0.5">
+                  {counties.map(city => (
+                    <button
+                      key={city}
+                      className="text-left px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-primary/10 transition-colors"
+                      onClick={() => {
+                        navigate(`/search-events?city=${encodeURIComponent(city)}`);
+                        setMobileMenuOpen(false);
+                      }}
+                    >
+                      {city}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+
+            {/* Mobile public extra links */}
+            {isLanding && publicExtraLinks.map(link => (
+              <Link
+                key={link.href}
+                to={link.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary"
+              >
+                <link.icon className="w-5 h-5" />
+                {link.label}
+              </Link>
+            ))}
 
             {/* Mobile Sign In / Dashboard */}
             {isLanding && !user && (

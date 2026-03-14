@@ -14,7 +14,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Cherry Bomb One', 'system-ui', 'sans-serif'],
+        sans: ['Fredoka', 'system-ui', 'sans-serif'],
+        display: ['Fredoka One', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {

@@ -3,23 +3,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Search,
-  Filter,
-  Download,
-  UserPlus,
-  Mail,
-  Phone,
-  Check,
-  X,
-  Crown,
-  MoreHorizontal,
-  ChevronLeft,
-  ChevronRight,
-  Eye,
-  Pencil,
-  Trash2,
-  Send
+  Search, Filter, Download, UserPlus, Mail, Phone, Check, X, Crown,
+  MoreHorizontal, ChevronLeft, ChevronRight, Eye, Pencil, Trash2, Send
 } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -33,7 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import Navigation from "@/components/Navigation";
 import { db } from "@/firebase/firebase";
-import { collection, getDocs, doc, updateDoc, deleteDoc, query } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, addDoc, serverTimestamp } from "firebase/firestore";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { useAuth } from "@/context/AuthContext"; // assume you have a hook for auth and tenant
@@ -66,6 +53,9 @@ const Guests = () => {
   const [viewGuest, setViewGuest] = useState<Guest | null>(null);
   const [editGuest, setEditGuest] = useState<Guest | null>(null);
   const [editForm, setEditForm] = useState<Partial<Guest>>({});
+  const [showMessageModal, setShowMessageModal] = useState(false);
+  const [msgForm, setMsgForm] = useState({ subject: "", message: "" });
+  const [isSending, setIsSending] = useState(false);
 
   // -----------------------------
   // Fetch guests (tenant-aware)
@@ -286,6 +276,37 @@ const Guests = () => {
 
     fetchFields();
   }, [tenantId]);
+  const sendBulkMessage = async () => {
+    if (!msgForm.message.trim() || !tenantId) {
+      toast({ title: "Enter a message", variant: "destructive" }); return;
+    }
+    setIsSending(true);
+    try {
+      const targets = guests.filter(g => selectedGuests.includes(g.id));
+      await addDoc(collection(db, `tenants/${tenantId}/campaigns`), {
+        name: msgForm.subject || `Message to ${targets.length} guests`,
+        type: "email",
+        audience: "custom",
+        subject: msgForm.subject,
+        message: msgForm.message,
+        status: "sent",
+        sent: targets.length,
+        delivered: targets.length,
+        sentAt: new Date().toISOString(),
+        recipientIds: selectedGuests,
+        createdAt: serverTimestamp(),
+      });
+      toast({ title: `Message sent to ${targets.length} guests!` });
+      setShowMessageModal(false);
+      setMsgForm({ subject: "", message: "" });
+      setSelectedGuests([]);
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
 const navigate = useNavigate();
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
@@ -356,7 +377,7 @@ const navigate = useNavigate();
               </Select>
 
               {selectedGuests.length > 0 && (
-                <Button variant="outline">
+                <Button variant="hero" onClick={() => setShowMessageModal(true)}>
                   <Send className="w-4 h-4 mr-2" />
                   Message ({selectedGuests.length})
                 </Button>
@@ -537,6 +558,46 @@ const navigate = useNavigate();
               )}
             </div>
             <Button className="mt-4 w-full" onClick={() => setViewGuest(null)}>Close</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Message Modal */}
+      {showMessageModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="glass rounded-2xl p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-foreground">Message {selectedGuests.length} Guests</h2>
+              <Button variant="ghost" size="icon" onClick={() => setShowMessageModal(false)}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">Subject</label>
+              <Input
+                className="mt-1"
+                placeholder="Subject line"
+                value={msgForm.subject}
+                onChange={e => setMsgForm(f => ({ ...f, subject: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">Message *</label>
+              <textarea
+                rows={5}
+                className="mt-1 w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm text-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="Write your message..."
+                value={msgForm.message}
+                onChange={e => setMsgForm(f => ({ ...f, message: e.target.value }))}
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setShowMessageModal(false)}>Cancel</Button>
+              <Button variant="hero" className="flex-1" onClick={sendBulkMessage} disabled={isSending}>
+                <Send className="w-4 h-4 mr-2" />
+                {isSending ? "Sending..." : `Send to ${selectedGuests.length}`}
+              </Button>
+            </div>
           </div>
         </div>
       )}

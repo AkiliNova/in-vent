@@ -19,6 +19,9 @@ export default defineConfig(({ mode }) => ({
     devOnly(componentTagger()), // Only in dev
     VitePWA({
       registerType: "autoUpdate",
+      workbox: {
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MiB
+      },
       includeAssets: ["favicon.png"], // your favicon
       manifest: {
         name: "Tenant Event App",

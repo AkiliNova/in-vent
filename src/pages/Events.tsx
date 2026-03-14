@@ -5,6 +5,7 @@ import { useLocation } from "react-router-dom";
 import { collectionGroup, getDocs, orderBy, query } from "firebase/firestore";
 import { db } from "@/firebase/firebase";
 import Navigation from "@/components/Navigation";
+import EventImg from "@/components/EventImg";
 
 interface Event {
   id: string;
@@ -40,20 +41,26 @@ export default function EventsPage() {
         const q = query(collectionGroup(db, "events"), orderBy("startDate", "asc"));
         const snapshot = await getDocs(q);
 
-        const data: Event[] = snapshot.docs.map(doc => {
-          const e = doc.data();
-          return {
-            id: doc.id,
-            title: e.title,
-            price: e.price,
-            image: e.images?.[0] || "",
-            startDate: e.startDate,
-            location: e.location || "Unknown",
-            city: e.city || "",
-            eventType: e.eventType || "",
-            link: `/events/${e.tenantId}/${doc.id}`,
-          };
-        });
+        const data: Event[] = snapshot.docs
+          .filter(doc => {
+            const e = doc.data();
+            // Only show published events (or events with no status field — legacy)
+            return !e.status || e.status === 'published';
+          })
+          .map(doc => {
+            const e = doc.data();
+            return {
+              id: doc.id,
+              title: e.title,
+              price: e.price,
+              image: e.images?.[0] || "",
+              startDate: e.startDate,
+              location: e.location || "Unknown",
+              city: e.city || "",
+              eventType: e.eventType || "",
+              link: `/events/${e.tenantId}/${doc.id}`,
+            };
+          });
 
         setEvents(data);
       } catch (err) {
@@ -112,10 +119,12 @@ export default function EventsPage() {
         href={event.link}
         className="group relative rounded-2xl overflow-hidden border border-border hover:shadow-lg transition h-96 md:h-[26rem]"
       >
-        <img
+        <EventImg
           src={event.image}
           alt={event.title}
+          title={event.title}
           className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+          placeholderClassName="absolute inset-0 w-full h-full"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
         <div className="absolute inset-0 p-6 flex flex-col justify-end gap-2">
