@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 // Generic event poster placeholder — royalty-free Unsplash image
 // Colorful stage lights, no specific event/performer
@@ -15,6 +15,12 @@ interface Props {
 export default function EventImg({ src, alt, className = '', placeholderClassName, title }: Props) {
   const [imgSrc, setImgSrc] = useState(src || PLACEHOLDER);
   const [triedPlaceholder, setTriedPlaceholder] = useState(!src);
+
+  // Sync when the src prop changes (e.g. banner rotation)
+  useEffect(() => {
+    setImgSrc(src || PLACEHOLDER);
+    setTriedPlaceholder(!src);
+  }, [src]);
 
   const handleError = () => {
     if (!triedPlaceholder) {

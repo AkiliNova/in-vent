@@ -45,6 +45,7 @@ export default function HeroSection() {
           query(collectionGroup(db, "events"), orderBy("startDate", "asc"))
         );
         if (!isMounted) return;
+        const now = new Date().toISOString();
         const data = snap.docs
           .map(doc => {
             const e = doc.data();
@@ -54,12 +55,15 @@ export default function HeroSection() {
               price: e.price,
               images: e.images || [],
               tenantId: e.tenantId,
-              startDate: e.startDate,
+              startDate: e.startDate || "",
               location: e.locationName || e.location || '',
               link: `/events/${e.tenantId}/${doc.id}`,
             };
           })
-          .filter(e => e.title);
+          // Only upcoming events that have a title and at least one image
+          .filter(e => e.title && e.images.length > 0 && e.startDate >= now)
+          // Soonest first
+          .sort((a, b) => a.startDate.localeCompare(b.startDate));
         setEvents(data);
       } catch (err) {
         console.error("Failed to fetch hero events", err);
@@ -188,12 +192,12 @@ export default function HeroSection() {
                 <Ticket className="w-12 h-12 text-white/10" />
               </div>
             ) : active ? (
-              <>
+              <div key={active.id} className="absolute inset-0 animate-fade-in">
                 <EventImg
                   src={active.images[0]}
                   alt={active.title}
                   title={active.title}
-                  className="absolute inset-0 w-full h-full object-cover transition-all duration-700"
+                  className="absolute inset-0 w-full h-full object-cover"
                   placeholderClassName="absolute inset-0 w-full h-full"
                 />
                 {/* gradient */}
@@ -236,7 +240,7 @@ export default function HeroSection() {
                     ))}
                   </div>
                 )}
-              </>
+              </div>
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-white/5">
                 <Ticket className="w-14 h-14 text-[#F32B81]/40" />

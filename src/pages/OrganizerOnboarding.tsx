@@ -208,33 +208,41 @@ const OrganizerOnboarding: React.FC = () => {
         {step === 2 && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {packages.map((pkg) => (
-                <Card
-                  key={pkg.id}
-                  className={`cursor-pointer border-2 transition ${
-                    formData.package === pkg.id
-                      ? "border-primary shadow-lg"
-                      : "border-muted"
-                  }`}
-                  onClick={() => setFormData({ ...formData, package: pkg.id })}
-                >
-                  <CardHeader>
-                    <CardTitle className="text-xl font-bold">{pkg.name}</CardTitle>
-                    <p className="text-muted-foreground">{pkg.price}</p>
-                  </CardHeader>
+              {packages.map((pkg) => {
+                const selected = formData.package === pkg.id;
+                return (
+                  <Card
+                    key={pkg.id}
+                    className={`cursor-pointer border-2 transition-all relative ${
+                      selected
+                        ? "border-primary ring-2 ring-primary/30 bg-primary/5 shadow-lg"
+                        : "border-muted hover:border-primary/40 hover:shadow-md"
+                    }`}
+                    onClick={() => setFormData({ ...formData, package: pkg.id })}
+                  >
+                    {selected && (
+                      <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                        <Check className="w-3.5 h-3.5 text-primary-foreground" />
+                      </div>
+                    )}
+                    <CardHeader>
+                      <CardTitle className={`text-xl font-bold ${selected ? "text-primary" : ""}`}>{pkg.name}</CardTitle>
+                      <p className="text-muted-foreground">{pkg.price}</p>
+                    </CardHeader>
 
-                  <CardContent>
-                    <ul className="space-y-2">
-                      {pkg.features.map((feat, i) => (
-                        <li key={i} className="flex items-center gap-2">
-                          <Check className="w-4 h-4 text-primary" />
-                          <span>{feat}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              ))}
+                    <CardContent>
+                      <ul className="space-y-2">
+                        {pkg.features.map((feat, i) => (
+                          <li key={i} className="flex items-center gap-2">
+                            <Check className="w-4 h-4 text-primary" />
+                            <span>{feat}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
 
             <div className="flex justify-between mt-8">

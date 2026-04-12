@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, ImageIcon, Ticket, Globe, EyeOff, BellRing } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Pencil, Trash2, ImageIcon, Ticket, Globe, EyeOff, BellRing, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,6 +55,7 @@ interface Event {
 const defaultTier = (): TicketTier => ({ name: '', price: 0, capacity: 100, sold: 0, description: '' });
 
 const EventsDashboard = ({ tenantId }: { tenantId: string }) => {
+  const navigate = useNavigate();
   const [events, setEvents] = useState<Event[]>([]);
   const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
   const [modalOpen, setModalOpen] = useState(false);
@@ -138,7 +140,7 @@ const EventsDashboard = ({ tenantId }: { tenantId: string }) => {
     files.forEach((file) => formData.append('images[]', file));
     formData.append('folder', `events/${tenantId}`);
     try {
-      const res = await fetch('https://tikooh.akilinova.tech/upload_events.php', { method: 'POST', body: formData });
+      const res = await fetch('https://share.akisolve.com/tikooh/upload_events.php', { method: 'POST', body: formData });
       if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
       const data = await res.json();
       if (!data.success) throw new Error(data.message || 'Upload failed');
@@ -281,6 +283,9 @@ const EventsDashboard = ({ tenantId }: { tenantId: string }) => {
                         {event.status === 'published'
                           ? <EyeOff className="w-4 h-4 text-yellow-500" />
                           : <Globe className="w-4 h-4 text-success" />}
+                      </Button>
+                      <Button variant="outline" size="icon" title="Manage Agenda" onClick={() => navigate(`/agenda/${event.id}`)}>
+                        <CalendarDays className="w-4 h-4 text-primary" />
                       </Button>
                       <Button variant="outline" size="icon" onClick={() => openEditModal(event)}>
                         <Pencil className="w-4 h-4" />

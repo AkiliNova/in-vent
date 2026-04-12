@@ -7,6 +7,8 @@ import {
   MoreHorizontal, ChevronLeft, ChevronRight, Eye, Pencil, Trash2, Send
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { sendSms } from "@/utils/sendSms";
+import { MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,8 +22,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import Navigation from "@/components/Navigation";
 import { db } from "@/firebase/firebase";
-import { collection, getDocs, doc, updateDoc, deleteDoc, query, addDoc, serverTimestamp } from "firebase/firestore";
-import * as XLSX from "xlsx";
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, addDoc, serverTimestamp, getDoc } from "firebase/firestore";
+import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { useAuth } from "@/context/AuthContext"; // assume you have a hook for auth and tenant
 
@@ -41,6 +43,45 @@ interface Guest {
   customFields?: Record<string, any>;
 }
 
+function PaginationControls({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
+  if (total <= 1) return null;
+  const pages: (number | "…")[] = [];
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (page > 3) pages.push("…");
+    for (let i = Math.max(2, page - 1); i <= Math.min(total - 1, page + 1); i++) pages.push(i);
+    if (page < total - 2) pages.push("…");
+    pages.push(total);
+  }
+  return (
+    <div className="flex items-center gap-1">
+      <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 1} onClick={() => onChange(page - 1)}>
+        <ChevronLeft className="w-4 h-4" />
+      </Button>
+      {pages.map((p, i) =>
+        p === "…" ? (
+          <span key={`ellipsis-${i}`} className="px-1 text-muted-foreground text-sm">…</span>
+        ) : (
+          <Button
+            key={p}
+            variant={p === page ? "hero" : "outline"}
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={() => onChange(p as number)}
+          >
+            {p}
+          </Button>
+        )
+      )}
+      <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === total} onClick={() => onChange(page + 1)}>
+        <ChevronRight className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+}
+
 const Guests = () => {
   const { tenantId } = useAuth(); // tenant-aware
   const [searchQuery, setSearchQuery] = useState("");
@@ -56,6 +97,21 @@ const Guests = () => {
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [msgForm, setMsgForm] = useState({ subject: "", message: "" });
   const [isSending, setIsSending] = useState(false);
+
+  const [showSmsModal, setShowSmsModal] = useState(false);
+  const [smsMessage, setSmsMessage] = useState("");
+  const [smsSendAll, setSmsSendAll] = useState(false);
+  const [isSendingSms, setIsSendingSms] = useState(false);
+
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportCols, setExportCols] = useState<{ key: string; label: string; checked: boolean; isCustom?: boolean }[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const PAGE_SIZE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, statusFilter, ticketFilter]);
 
   // -----------------------------
   // Fetch guests (tenant-aware)
@@ -169,6 +225,15 @@ const Guests = () => {
     return matchesSearch && matchesStatus && matchesTicket;
   });
 
+  const totalPages = Math.max(1, Math.ceil(filteredGuests.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedGuests = filteredGuests.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Summary stats (always over full guest list, not filtered)
+  const checkedIn = guests.filter(g => g.status === "checked-in").length;
+  const pending   = guests.filter(g => g.status === "pending").length;
+  const noShow    = guests.filter(g => g.status === "no-show").length;
+  const totalRevenue = guests.reduce((sum, g) => sum + (g.amountPaid || 0), 0);
 
   const toggleSelectAll = () => {
     if (selectedGuests.length === filteredGuests.length) {
@@ -219,47 +284,113 @@ const Guests = () => {
     });
   };
 
-  const exportToExcel = () => {
+  const openExportModal = () => {
     if (guests.length === 0) return;
+    const fixed = [
+      { key: "name", label: "Name", checked: true },
+      { key: "email", label: "Email", checked: true },
+      { key: "phone", label: "Phone", checked: true },
+      { key: "companyOrIndividual", label: "Company", checked: true },
+      { key: "ticketType", label: "Ticket", checked: true },
+      { key: "status", label: "Status", checked: true },
+      { key: "checkedInAt", label: "Checked In At", checked: true },
+      { key: "registeredAt", label: "Registered At", checked: true },
+      { key: "amountPaid", label: "Amount Paid (KES)", checked: true },
+    ];
+    const custom = Object.entries(registrationFields).map(([fieldId, label]) => ({
+      key: fieldId, label, checked: true, isCustom: true,
+    }));
+    setExportCols([...fixed, ...custom]);
+    setShowExportModal(true);
+  };
 
-    const dataToExport =
-      selectedGuests.length > 0
+  const runExport = async () => {
+    const activeCols = exportCols.filter((c) => c.checked);
+    if (activeCols.length === 0) {
+      toast({ title: "Select at least one column", variant: "destructive" }); return;
+    }
+
+    setIsExporting(true);
+    try {
+      const dataToExport = selectedGuests.length > 0
         ? guests.filter((g) => selectedGuests.includes(g.id))
         : guests;
 
-    const data = dataToExport.map((g) => {
-      // Map customFields keys (fieldId) to labels
-      const mappedCustomFields: Record<string, any> = {};
-      if (g.customFields) {
-        Object.entries(g.customFields).forEach(([fieldId, value]) => {
-          const label = registrationFields[fieldId] || fieldId;
-          mappedCustomFields[label] = value;
-        });
-      }
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "Tikooh";
+      const ws = workbook.addWorksheet("Guests");
 
-      return {
-        Name: g.name,
-        Email: g.email,
-        Phone: g.phone,
-        Company: g.companyOrIndividual,
-        Ticket: g.ticketType,
-        Status: g.status,
-        "Checked In At": formatDate(g.checkedInAt),
-        "Registered At": formatDate(g.registeredAt),
-        "Amount Paid": g.amountPaid,
-        ...mappedCustomFields,
+      // ── Logo ────────────────────────────────────────────────────────────
+      try {
+        const logoRes = await fetch("/assets/logo.png");
+        const logoBuffer = await logoRes.arrayBuffer();
+        const logoId = workbook.addImage({ buffer: logoBuffer, extension: "png" });
+        ws.addImage(logoId, { tl: { col: 0, row: 0 }, ext: { width: 160, height: 52 } });
+      } catch (_) {}
+
+      // ── Header info ──────────────────────────────────────────────────────
+      ws.getRow(1).height = 20; ws.getRow(2).height = 18;
+      ws.getRow(3).height = 16; ws.getRow(4).height = 16;
+
+      const titleCell = ws.getCell("C1");
+      titleCell.value = orgName || "Tikooh";
+      titleCell.font = { bold: true, size: 14 };
+
+      const subtitleCell = ws.getCell("C2");
+      subtitleCell.value = "Guest Export Report";
+      subtitleCell.font = { bold: true, size: 11, color: { argb: "FF6B6BF9" } };
+
+      ws.getCell("C3").value = `Exported: ${new Date().toLocaleString()}`;
+      ws.getCell("C3").font = { size: 9, color: { argb: "FF888888" } };
+
+      ws.getCell("C4").value = `Total guests: ${dataToExport.length}  ·  Columns: ${activeCols.map(c => c.label).join(", ")}`;
+      ws.getCell("C4").font = { size: 9, color: { argb: "FF888888" } };
+
+      ws.addRow([]); // separator
+
+      // ── Column headers ───────────────────────────────────────────────────
+      const headerRow = ws.addRow(activeCols.map((c) => c.label));
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E1E2E" } };
+        cell.alignment = { vertical: "middle" };
+        cell.border = { bottom: { style: "thin", color: { argb: "FF6B6BF9" } } };
+      });
+      headerRow.height = 20;
+
+      // ── Data rows ────────────────────────────────────────────────────────
+      const colWidthMap: Record<string, number> = {
+        name: 30, email: 32, phone: 16, companyOrIndividual: 24,
+        ticketType: 12, status: 14, checkedInAt: 22, registeredAt: 22, amountPaid: 18,
       };
-    });
 
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Guests");
-    const wbout = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([wbout], { type: "application/octet-stream" });
-    saveAs(blob, "guests.xlsx");
+      dataToExport.forEach((g) => {
+        const values = activeCols.map((col) => {
+          if (col.isCustom) return g.customFields?.[col.key] ?? "";
+          if (col.key === "checkedInAt") return formatDate(g.checkedInAt);
+          if (col.key === "registeredAt") return formatDate(g.registeredAt);
+          return (g as any)[col.key] ?? "";
+        });
+        const row = ws.addRow(values);
+        row.eachCell((cell) => { cell.alignment = { vertical: "middle" }; });
+      });
+
+      ws.columns = activeCols.map((col) => ({ width: colWidthMap[col.key] ?? 20 }));
+
+      // ── Save ─────────────────────────────────────────────────────────────
+      const buffer = await workbook.xlsx.writeBuffer();
+      const filename = `guests-${(orgName || "export").replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      saveAs(new Blob([buffer], { type: "application/octet-stream" }), filename);
+      setShowExportModal(false);
+    } catch (err: any) {
+      toast({ title: "Export failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const [registrationFields, setRegistrationFields] = useState<Record<string, string>>({});
+  const [orgName, setOrgName] = useState("");
 
   useEffect(() => {
     if (!tenantId) return;
@@ -269,13 +400,48 @@ const Guests = () => {
       const fieldsMap: Record<string, string> = {};
       snap.docs.forEach(doc => {
         const data = doc.data();
-        fieldsMap[doc.id] = data.label; // map fieldId => label
+        fieldsMap[doc.id] = data.label;
       });
       setRegistrationFields(fieldsMap);
     };
 
+    const fetchOrgName = async () => {
+      try {
+        const tenantSnap = await getDoc(doc(db, "tenants", tenantId));
+        if (tenantSnap.exists()) setOrgName(tenantSnap.data().organizationName || "");
+      } catch (_) {}
+    };
+
     fetchFields();
+    fetchOrgName();
   }, [tenantId]);
+  const sendBulkSms = async () => {
+    if (!smsMessage.trim()) {
+      toast({ title: "Enter a message", variant: "destructive" }); return;
+    }
+    const targets = smsSendAll
+      ? guests
+      : guests.filter(g => selectedGuests.includes(g.id));
+    const phones = targets.map(g => g.phone).filter(Boolean);
+    if (!phones.length) {
+      toast({ title: "No phone numbers found", variant: "destructive" }); return;
+    }
+    setIsSendingSms(true);
+    try {
+      const result = await sendSms(phones, smsMessage);
+      toast({
+        title: `SMS sent to ${result.sent} guests`,
+        description: result.failed.length ? `${result.failed.length} failed` : undefined,
+      });
+      setShowSmsModal(false);
+      setSmsMessage("");
+    } catch (err: any) {
+      toast({ title: "SMS failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSendingSms(false);
+    }
+  };
+
   const sendBulkMessage = async () => {
     if (!msgForm.message.trim() || !tenantId) {
       toast({ title: "Enter a message", variant: "destructive" }); return;
@@ -323,9 +489,17 @@ const navigate = useNavigate();
               <p className="text-muted-foreground">View and manage all event attendees</p>
             </div>
             <div className="flex items-center gap-3 mt-4 md:mt-0">
-              <Button variant="outline" size="sm" onClick={exportToExcel}>
+              <Button variant="outline" size="sm" onClick={openExportModal}>
                 <Download className="w-4 h-4 mr-2" />
                 Export
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setSmsSendAll(false); setShowSmsModal(true); }}
+              >
+                <MessageSquare className="w-4 h-4 mr-2" />
+                SMS
               </Button>
               <Button
                 variant="hero"
@@ -386,6 +560,30 @@ const navigate = useNavigate();
           </div>
 
 
+          {/* Summary + top pagination */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+            {/* Stats */}
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="px-3 py-1.5 rounded-full bg-secondary text-muted-foreground">
+                Total <strong className="text-foreground ml-1">{guests.length}</strong>
+              </span>
+              <span className="px-3 py-1.5 rounded-full bg-success/10 text-success">
+                Checked in <strong className="ml-1">{checkedIn}</strong>
+              </span>
+              <span className="px-3 py-1.5 rounded-full bg-yellow-500/10 text-yellow-500">
+                Pending <strong className="ml-1">{pending}</strong>
+              </span>
+              <span className="px-3 py-1.5 rounded-full bg-destructive/10 text-destructive">
+                No-show <strong className="ml-1">{noShow}</strong>
+              </span>
+              <span className="px-3 py-1.5 rounded-full bg-primary/10 text-primary">
+                Revenue <strong className="ml-1">KES {totalRevenue.toLocaleString()}</strong>
+              </span>
+            </div>
+            {/* Top pagination */}
+            <PaginationControls page={safePage} total={totalPages} onChange={(p) => setCurrentPage(p)} />
+          </div>
+
           {/* Guest Table */}
           <div className="glass rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
@@ -396,6 +594,7 @@ const navigate = useNavigate();
                       <Checkbox
                         checked={selectedGuests.length === filteredGuests.length && filteredGuests.length > 0}
                         onCheckedChange={toggleSelectAll}
+                        title="Select all filtered"
                       />
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">Guest</th>
@@ -410,7 +609,7 @@ const navigate = useNavigate();
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredGuests.map((guest) => (
+                  {pagedGuests.map((guest) => (
                     <tr
                       key={guest.id}
                       className="border-b border-border/50 hover:bg-secondary/50 transition-colors"
@@ -510,22 +709,13 @@ const navigate = useNavigate();
           </div>
 
 
-          {/* Pagination placeholder */}
-          <div className="flex items-center justify-between p-4 border-t border-border mt-4">
+          {/* Bottom pagination */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t border-border mt-4">
             <p className="text-sm text-muted-foreground">
-              Showing {filteredGuests.length} of {guests.length} guests
+              Showing <strong className="text-foreground">{(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filteredGuests.length)}</strong> of <strong className="text-foreground">{filteredGuests.length}</strong> guests
+              {filteredGuests.length !== guests.length && <span className="ml-1">(filtered from {guests.length})</span>}
             </p>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" disabled>
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" size="sm">1</Button>
-              <Button variant="ghost" size="sm">2</Button>
-              <Button variant="ghost" size="sm">3</Button>
-              <Button variant="outline" size="icon">
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
+            <PaginationControls page={safePage} total={totalPages} onChange={(p) => setCurrentPage(p)} />
           </div>
         </div>
       </main>
@@ -596,6 +786,132 @@ const navigate = useNavigate();
               <Button variant="hero" className="flex-1" onClick={sendBulkMessage} disabled={isSending}>
                 <Send className="w-4 h-4 mr-2" />
                 {isSending ? "Sending..." : `Send to ${selectedGuests.length}`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Column Picker Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="glass rounded-2xl p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-foreground">Export Columns</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {selectedGuests.length > 0 ? `${selectedGuests.length} selected guests` : `All ${guests.length} guests`}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setShowExportModal(false)}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+
+            {/* Select all / none */}
+            <div className="flex items-center justify-between py-2 border-b border-border">
+              <span className="text-sm font-medium text-foreground">
+                {exportCols.filter(c => c.checked).length} / {exportCols.length} selected
+              </span>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" className="text-xs h-7"
+                  onClick={() => setExportCols(cols => cols.map(c => ({ ...c, checked: true })))}>
+                  All
+                </Button>
+                <Button variant="ghost" size="sm" className="text-xs h-7"
+                  onClick={() => setExportCols(cols => cols.map(c => ({ ...c, checked: false })))}>
+                  None
+                </Button>
+              </div>
+            </div>
+
+            {/* Column list */}
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {exportCols.map((col, i) => (
+                <label key={col.key} className="flex items-center gap-3 cursor-pointer rounded-lg px-2 py-1.5 hover:bg-secondary/50 transition-colors">
+                  <Checkbox
+                    checked={col.checked}
+                    onCheckedChange={(v) =>
+                      setExportCols(prev => prev.map((c, idx) => idx === i ? { ...c, checked: !!v } : c))
+                    }
+                  />
+                  <span className="text-sm text-foreground">{col.label}</span>
+                  {col.isCustom && (
+                    <span className="ml-auto text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded">custom</span>
+                  )}
+                </label>
+              ))}
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowExportModal(false)}>Cancel</Button>
+              <Button variant="hero" className="flex-1" onClick={runExport} disabled={isExporting}>
+                <Download className="w-4 h-4 mr-2" />
+                {isExporting ? "Exporting…" : "Export"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SMS Modal */}
+      {showSmsModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="glass rounded-2xl p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-primary" /> Send SMS
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">via Advanta SMS</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setShowSmsModal(false)}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+
+            {/* Audience toggle */}
+            <div className="flex rounded-xl overflow-hidden border border-border">
+              <button
+                className={`flex-1 py-2 text-sm font-medium transition-colors ${!smsSendAll ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'}`}
+                onClick={() => setSmsSendAll(false)}
+              >
+                Selected ({selectedGuests.length || 0})
+              </button>
+              <button
+                className={`flex-1 py-2 text-sm font-medium transition-colors ${smsSendAll ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'}`}
+                onClick={() => setSmsSendAll(true)}
+              >
+                All Guests ({guests.length})
+              </button>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm font-medium text-foreground">Message *</label>
+                <span className={`text-xs ${smsMessage.length > 160 ? 'text-yellow-500' : 'text-muted-foreground'}`}>
+                  {smsMessage.length} chars · {Math.ceil(smsMessage.length / 160) || 1} SMS
+                </span>
+              </div>
+              <textarea
+                rows={4}
+                className="w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm text-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="Type your SMS message…"
+                value={smsMessage}
+                onChange={e => setSmsMessage(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setShowSmsModal(false)}>Cancel</Button>
+              <Button
+                variant="hero"
+                className="flex-1"
+                onClick={sendBulkSms}
+                disabled={isSendingSms || !smsMessage.trim() || (!smsSendAll && selectedGuests.length === 0)}
+              >
+                <MessageSquare className="w-4 h-4 mr-2" />
+                {isSendingSms ? "Sending…" : `Send to ${smsSendAll ? guests.length : selectedGuests.length}`}
               </Button>
             </div>
           </div>

@@ -56,44 +56,74 @@ export default function MyTickets() {
     }
   };
 
-  const downloadPDF = (t: TicketRecord) => {
+  const downloadPDF = async (t: TicketRecord) => {
+    // Load Tikooh logo
+    let logoDataUrl = "";
+    try {
+      await new Promise<void>((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = "/assets/logo.png";
+        img.onload = () => {
+          const c = document.createElement("canvas");
+          c.width = img.naturalWidth; c.height = img.naturalHeight;
+          c.getContext("2d")!.drawImage(img, 0, 0);
+          logoDataUrl = c.toDataURL("image/png");
+          resolve();
+        };
+        img.onerror = () => resolve();
+      });
+    } catch (_) {}
+
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a5" });
 
     pdf.setFillColor(10, 14, 39);
     pdf.rect(0, 0, 148, 210, "F");
     pdf.setFillColor(27, 179, 160);
-    pdf.rect(0, 0, 148, 18, "F");
+    pdf.rect(0, 0, 148, 22, "F");
+
+    if (logoDataUrl) {
+      pdf.addImage(logoDataUrl, "PNG", 8, 4, 44, 14);
+    } else {
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(13);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Tikooh", 10, 14);
+    }
     pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(12);
+    pdf.setFontSize(7);
     pdf.setFont("helvetica", "bold");
-    pdf.text("IN-VENT", 10, 12);
-    pdf.setFontSize(8);
-    pdf.setFont("helvetica", "normal");
-    pdf.text("TICKET", 138, 12, { align: "right" });
+    pdf.text("E-TICKET", 138, 14, { align: "right" });
 
     pdf.setFontSize(16);
     pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(255, 255, 255);
     const title = pdf.splitTextToSize(t.eventTitle || "Event Ticket", 128);
-    pdf.text(title, 10, 30);
+    pdf.text(title, 10, 34);
 
     pdf.setDrawColor(27, 179, 160);
-    pdf.line(10, 48, 138, 48);
+    pdf.setLineWidth(0.5);
+    pdf.line(10, 52, 138, 52);
 
+    pdf.setFontSize(8);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(27, 179, 160);
+    pdf.text("ATTENDEE", 10, 62);
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.text(t.buyerName || "—", 10, 69);
     pdf.setFontSize(9);
-    pdf.setFont("helvetica", "bold");
-    pdf.setTextColor(27, 179, 160);
-    pdf.text("ATTENDEE", 10, 57);
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(t.buyerName || "—", 10, 64);
-    pdf.text(t.buyerEmail || "—", 10, 70);
+    pdf.text(t.buyerEmail || "—", 10, 75);
 
+    pdf.setFontSize(8);
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(27, 179, 160);
-    pdf.text("TICKETS", 10, 82);
+    pdf.text("TICKETS", 10, 87);
     pdf.setTextColor(255, 255, 255);
     pdf.setFont("helvetica", "normal");
-    let y = 89;
+    pdf.setFontSize(9);
+    let y = 94;
     (t.tiers || []).forEach(tier => {
       pdf.text(`${tier.qty}× ${tier.name}  —  KES ${(tier.qty * tier.price).toLocaleString()}`, 10, y);
       y += 7;
@@ -103,26 +133,29 @@ export default function MyTickets() {
     pdf.line(10, y + 2, 138, y + 2);
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(27, 179, 160);
-    pdf.text(`TOTAL: ${t.currency} ${Number(t.amount).toLocaleString()}`, 10, y + 9);
+    pdf.setFontSize(10);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(27, 179, 160);
+    pdf.text(`TOTAL PAID: ${t.currency} ${Number(t.amount).toLocaleString()}`, 10, y + 10);
     pdf.setFontSize(7);
-    pdf.setTextColor(150, 150, 150);
+    pdf.setTextColor(130, 130, 130);
     pdf.setFont("helvetica", "normal");
-    pdf.text(`Ref: ${t.orderReference}`, 10, y + 17);
+    pdf.text(`Ref: ${t.orderReference}`, 10, y + 20);
 
     // QR
     const canvas = document.getElementById(`qr-${t.id}`) as HTMLCanvasElement;
     if (canvas) {
       const qrDataUrl = canvas.toDataURL("image/png");
-      pdf.addImage(qrDataUrl, "PNG", 49, y + 25, 50, 50);
+      pdf.addImage(qrDataUrl, "PNG", 49, y + 28, 50, 50);
       pdf.setFontSize(7);
-      pdf.setTextColor(150, 150, 150);
-      pdf.text("Scan at entry", 74, y + 80, { align: "center" });
+      pdf.setTextColor(130, 130, 130);
+      pdf.text("Scan at entry", 74, y + 82, { align: "center" });
     }
 
     pdf.setFontSize(7);
-    pdf.setTextColor(100, 100, 100);
-    pdf.text("in-vent.app  ·  Powered by In-Vent", 74, 205, { align: "center" });
-    pdf.save(`ticket-${t.orderReference}.pdf`);
+    pdf.setTextColor(80, 80, 80);
+    pdf.text("tikooh.com  ·  Powered by Tikooh", 74, 206, { align: "center" });
+    pdf.save(`tikooh-ticket-${t.orderReference}.pdf`);
   };
 
   return (

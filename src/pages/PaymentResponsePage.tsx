@@ -52,7 +52,7 @@ export default function PaymentResponsePage() {
     const verifyAndSave = async () => {
       try {
         const res = await fetch(
-          `https://tikooh.akilinova.tech/payment/verify_payment.php?orderTrackingId=${orderTrackingId}`
+          `https://share.akisolve.com/tikooh/payment/verify_payment.php?orderTrackingId=${orderTrackingId}`
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Verification failed");
@@ -157,8 +157,27 @@ export default function PaymentResponsePage() {
     verifyAndSave();
   }, [orderTrackingId, orderReference]);
 
-  const downloadPDF = () => {
+  const downloadPDF = async () => {
     if (!ticketInfo) return;
+
+    // Load Tikooh logo
+    let logoDataUrl = "";
+    try {
+      await new Promise<void>((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = "/assets/logo.png";
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width  = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          canvas.getContext("2d")!.drawImage(img, 0, 0);
+          logoDataUrl = canvas.toDataURL("image/png");
+          resolve();
+        };
+        img.onerror = () => resolve();
+      });
+    } catch (_) {}
 
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a5" });
 
@@ -166,51 +185,63 @@ export default function PaymentResponsePage() {
     pdf.setFillColor(10, 14, 39);
     pdf.rect(0, 0, 148, 210, "F");
 
-    // Header bar
+    // Teal header bar
     pdf.setFillColor(27, 179, 160);
-    pdf.rect(0, 0, 148, 18, "F");
+    pdf.rect(0, 0, 148, 22, "F");
 
+    // Tikooh logo in header
+    if (logoDataUrl) {
+      const logoW = 44, logoH = 14;
+      pdf.addImage(logoDataUrl, "PNG", 8, (22 - logoH) / 2, logoW, logoH);
+    } else {
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(13);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("Tikooh", 10, 14);
+    }
+
+    // Ticket badge
     pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(12);
+    pdf.setFontSize(7);
     pdf.setFont("helvetica", "bold");
-    pdf.text("IN-VENT", 10, 12);
-    pdf.setFontSize(8);
-    pdf.setFont("helvetica", "normal");
-    pdf.text("TICKET", 138, 12, { align: "right" });
+    pdf.text("E-TICKET", 138, 14, { align: "right" });
 
     // Event title
-    pdf.setFontSize(18);
+    pdf.setFontSize(16);
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(255, 255, 255);
     const title = pdf.splitTextToSize(ticketInfo.eventTitle, 128);
-    pdf.text(title, 10, 32);
+    pdf.text(title, 10, 34);
 
     // Divider
     pdf.setDrawColor(27, 179, 160);
     pdf.setLineWidth(0.5);
-    pdf.line(10, 50, 138, 50);
+    pdf.line(10, 52, 138, 52);
 
-    // Buyer info
-    pdf.setFontSize(10);
+    // Attendee
+    pdf.setFontSize(8);
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(27, 179, 160);
-    pdf.text("ATTENDEE", 10, 60);
+    pdf.text("ATTENDEE", 10, 62);
     pdf.setTextColor(255, 255, 255);
     pdf.setFont("helvetica", "normal");
-    pdf.text(ticketInfo.buyerName || "—", 10, 67);
-    pdf.text(ticketInfo.buyerEmail || "—", 10, 73);
-
-    // Ticket tiers
     pdf.setFontSize(10);
+    pdf.text(ticketInfo.buyerName  || "—", 10, 69);
+    pdf.setFontSize(9);
+    pdf.text(ticketInfo.buyerEmail || "—", 10, 75);
+
+    // Tickets
+    pdf.setFontSize(8);
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(27, 179, 160);
-    pdf.text("TICKETS", 10, 85);
+    pdf.text("TICKETS", 10, 87);
     pdf.setTextColor(255, 255, 255);
     pdf.setFont("helvetica", "normal");
-    let y = 92;
+    pdf.setFontSize(9);
+    let y = 94;
     if (ticketInfo.tiers?.length) {
       ticketInfo.tiers.forEach(t => {
-        pdf.text(`${t.qty}x ${t.name}  —  KES ${(t.qty * t.price).toLocaleString()}`, 10, y);
+        pdf.text(`${t.qty}× ${t.name}   KES ${(t.qty * t.price).toLocaleString()}`, 10, y);
         y += 7;
       });
     } else {
@@ -222,32 +253,32 @@ export default function PaymentResponsePage() {
     pdf.setDrawColor(27, 179, 160);
     pdf.line(10, y + 2, 138, y + 2);
     pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
     pdf.setTextColor(27, 179, 160);
-    pdf.text(`TOTAL: ${ticketInfo.currency} ${Number(ticketInfo.amount).toLocaleString()}`, 10, y + 9);
+    pdf.text(`TOTAL PAID: ${ticketInfo.currency} ${Number(ticketInfo.amount).toLocaleString()}`, 10, y + 10);
 
-    // Order ref
-    pdf.setFontSize(8);
-    pdf.setTextColor(150, 150, 150);
+    // Ref
+    pdf.setFontSize(7);
+    pdf.setTextColor(130, 130, 130);
     pdf.setFont("helvetica", "normal");
-    pdf.text(`Ref: ${ticketInfo.orderReference}`, 10, y + 18);
+    pdf.text(`Ref: ${ticketInfo.orderReference}`, 10, y + 20);
 
-    // QR code section — render via canvas
+    // QR code
     const qrCanvas = qrRef.current?.querySelector("canvas");
     if (qrCanvas) {
       const qrDataUrl = qrCanvas.toDataURL("image/png");
-      const qrX = 148 / 2 - 25;
-      pdf.addImage(qrDataUrl, "PNG", qrX, y + 25, 50, 50);
+      pdf.addImage(qrDataUrl, "PNG", 49, y + 28, 50, 50);
       pdf.setFontSize(7);
-      pdf.setTextColor(150, 150, 150);
-      pdf.text("Scan at entry", 74, y + 80, { align: "center" });
+      pdf.setTextColor(130, 130, 130);
+      pdf.text("Scan at entry", 74, y + 82, { align: "center" });
     }
 
     // Footer
     pdf.setFontSize(7);
-    pdf.setTextColor(100, 100, 100);
-    pdf.text("in-vent.app  ·  Powered by In-Vent", 74, 205, { align: "center" });
+    pdf.setTextColor(80, 80, 80);
+    pdf.text("tikooh.com  ·  Powered by Tikooh", 74, 206, { align: "center" });
 
-    pdf.save(`ticket-${ticketInfo.orderReference}.pdf`);
+    pdf.save(`tikooh-ticket-${ticketInfo.orderReference}.pdf`);
   };
 
   if (loading) {

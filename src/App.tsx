@@ -30,6 +30,8 @@ import Blog from "./pages/Blog";
 import BlogPost from "./pages/BlogPost";
 import Help from "./pages/Help";
 import BlogManager from "./pages/admin/BlogManager";
+import AgendaManager from "./pages/admin/AgendaManager";
+import SuperAdmin from "./pages/admin/SuperAdmin";
 
 const queryClient = new QueryClient();
 
@@ -134,6 +136,22 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <BlogManager />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/agenda/:eventId"
+            element={
+              <ProtectedRoute>
+                <AgendaManager />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin"
+            element={
+              <ProtectedRoute>
+                <SuperAdmin />
               </ProtectedRoute>
             }
           />

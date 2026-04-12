@@ -20,6 +20,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
+import { sendSms } from "@/utils/sendSms";
 
 interface Campaign {
   id: string;
@@ -165,31 +166,37 @@ const CampaignsUI = () => {
     setSendingProgress(0);
 
     try {
-      // Mark as sending
       await updateDoc(doc(db, `tenants/${tenantId}/campaigns`, campaign.id), { status: "sending" });
 
-      // Simulate batch sending — in production, call your SMS/email API here
-      // e.g. POST to https://tikooh.akilinova.tech/campaigns/send.php
-      let sent = 0;
-      const batchSize = Math.max(1, Math.floor(targets.length / 10));
+      let sentCount = 0;
 
-      for (let i = 0; i < targets.length; i += batchSize) {
-        // In production: send actual SMS/email to targets.slice(i, i + batchSize)
-        // For now we simulate the send with a short delay
-        await new Promise(r => setTimeout(r, 200));
-        sent = Math.min(i + batchSize, targets.length);
-        setSendingProgress(Math.round((sent / targets.length) * 100));
+      if (campaign.type === "sms") {
+        const phones = targets.map(g => g.phone).filter(Boolean);
+        setSendingProgress(10);
+        const result = await sendSms(phones, campaign.message || "");
+        sentCount = result.sent;
+        setSendingProgress(100);
+        if (result.failed.length) {
+          toast({ title: `SMS sent`, description: `${sentCount} delivered, ${result.failed.length} failed` });
+        }
+      } else {
+        // Email: simulate batch for now (plug in email provider here)
+        const batchSize = Math.max(1, Math.floor(targets.length / 10));
+        for (let i = 0; i < targets.length; i += batchSize) {
+          await new Promise(r => setTimeout(r, 150));
+          sentCount = Math.min(i + batchSize, targets.length);
+          setSendingProgress(Math.round((sentCount / targets.length) * 100));
+        }
       }
 
-      // Mark as sent
       await updateDoc(doc(db, `tenants/${tenantId}/campaigns`, campaign.id), {
         status: "sent",
-        sent: targets.length,
-        delivered: targets.length,
+        sent: sentCount,
+        delivered: sentCount,
         sentAt: new Date().toISOString(),
       });
 
-      toast({ title: `Sent to ${targets.length} recipients!` });
+      toast({ title: `Sent to ${sentCount} recipients!` });
     } catch (err: any) {
       toast({ title: "Send failed", description: err.message, variant: "destructive" });
       await updateDoc(doc(db, `tenants/${tenantId}/campaigns`, campaign.id), { status: "draft" });
