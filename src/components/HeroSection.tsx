@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { db } from "@/firebase/firebase";
-import { collectionGroup, getDocs, query, orderBy } from "firebase/firestore";
+import { fetchPublicEvents } from "@/lib/api";
 import { Link, useNavigate } from "react-router-dom";
 import { Search, MapPin, Calendar, Ticket, ArrowRight, Zap, Shield, Smartphone } from "lucide-react";
 import EventImg from "./EventImg";
@@ -41,30 +40,10 @@ export default function HeroSection() {
     let isMounted = true;
     const fetchEvents = async () => {
       try {
-        const snap = await getDocs(
-          query(collectionGroup(db, "events"), orderBy("startDate", "asc"))
-        );
+        const all = await fetchPublicEvents();
         if (!isMounted) return;
-        const now = new Date().toISOString();
-        const data = snap.docs
-          .map(doc => {
-            const e = doc.data();
-            return {
-              id: doc.id,
-              title: e.title,
-              price: e.price,
-              images: e.images || [],
-              tenantId: e.tenantId,
-              startDate: e.startDate || "",
-              location: e.locationName || e.location || '',
-              link: `/events/${e.tenantId}/${doc.id}`,
-            };
-          })
-          // Only upcoming events that have a title and at least one image
-          .filter(e => e.title && e.images.length > 0 && e.startDate >= now)
-          // Soonest first
-          .sort((a, b) => a.startDate.localeCompare(b.startDate));
-        setEvents(data);
+        // The API returns upcoming events soonest first; the hero needs an image.
+        setEvents(all.filter(e => e.images.length > 0).map(e => ({ ...e, tenantId: "" })));
       } catch (err) {
         console.error("Failed to fetch hero events", err);
       } finally {

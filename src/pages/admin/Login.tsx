@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { firebaseErrorMessage } from "@/utils/firebaseErrors";
+import { PasswordInput } from "@/components/ui/password-input";
+import { Label } from "@/components/ui/label";
+import { errorMessage } from "@/lib/api";
 
 const AdminLogin = () => {
-  const { login, tenantId } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -20,19 +22,10 @@ const AdminLogin = () => {
     setError(null);
 
     try {
-      await login(email, password);
-
-      if (!tenantId) {
-        alert("No tenant assigned to this admin. Contact super admin.");
-        setLoading(false);
-        return;
-      }
-
-      navigate("/dashboard");
-    } catch (err: any) {
-      const code =
-        err?.code || err?.message?.match(/auth\/[a-zA-Z0-9-]+/)?.[0] || "";
-      setError(firebaseErrorMessage(code));
+      const user = await login(email, password);
+      navigate(user.role === "super_admin" ? "/super-admin" : "/dashboard");
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -40,40 +33,40 @@ const AdminLogin = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="max-w-md w-full bg-secondary p-8 rounded-2xl shadow-md">
-        <h1 className="text-2xl font-bold mb-6 text-foreground">Admin Login</h1>
+      <div className="max-w-md w-full glass p-8 rounded-2xl">
+        <Link to="/" className="block mb-6">
+          <img src="/assets/logo.png" alt="Tikooh" className="h-10 object-contain" />
+        </Link>
+        <h1 className="text-2xl font-bold mb-1 text-foreground">Welcome back</h1>
+        <p className="text-sm text-muted-foreground mb-6">Sign in to manage your events and wallet.</p>
 
         {error && (
-          <div className="mb-4 p-2 text-sm text-destructive bg-destructive/20 rounded">
+          <div role="alert" className="mb-4 p-3 text-sm text-destructive bg-destructive/15 rounded-lg">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" autoComplete="email" value={email}
+              onChange={(e) => setEmail(e.target.value)} required />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Password</label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+          <div className="space-y-1.5">
+            <Label htmlFor="password">Password</Label>
+            <PasswordInput id="password" autoComplete="current-password" value={password}
+              onChange={(e) => setPassword(e.target.value)} required />
           </div>
 
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Logging in..." : "Login"}
+            {loading ? "Signing in…" : "Sign in"}
           </Button>
         </form>
+
+        <p className="text-sm text-muted-foreground mt-6 text-center">
+          New organiser? <Link to="/onboarding" className="text-primary hover:underline">Create an account</Link>
+        </p>
       </div>
     </div>
   );

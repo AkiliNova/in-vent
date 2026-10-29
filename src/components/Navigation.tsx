@@ -1,15 +1,13 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard, QrCode, ScanLine, Users, MessageSquare, Settings,
   Menu, X, House, LogOut, Tag, Wallet, Ticket, ChevronDown, BookOpen, ShieldCheck
 } from 'lucide-react';
-import { auth, db } from "@/firebase/firebase";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { useAuth } from "@/context/AuthContext";
 
 const sports  = ["Football", "Basketball", "Rugby", "Athletics", "Cricket"];
 const counties = [
@@ -21,8 +19,8 @@ const Navigation = () => {
   const location  = useLocation();
   const navigate  = useNavigate();
   const [mobileMenuOpen,    setMobileMenuOpen]    = useState(false);
-  const [user,               setUser]              = useState<any>(null);
-  const [isSuperAdmin,       setIsSuperAdmin]      = useState(false);
+  const { user, logout } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
   const [openSports,         setOpenSports]        = useState(false);
   const [openCities,         setOpenCities]        = useState(false);
   const [mobileSportsOpen,   setMobileSportsOpen]  = useState(false);
@@ -31,43 +29,24 @@ const Navigation = () => {
   const isLanding =
     ['/', '/search-events', '/blog', '/help', '/my-tickets', '/onboarding'].includes(location.pathname) ||
     location.pathname.startsWith('/events') ||
+    location.pathname.startsWith('/e/') ||
+    location.pathname === '/payment-response' ||
     location.pathname.startsWith('/blog/');
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        try {
-          const snap = await getDoc(doc(db, "admins", firebaseUser.uid));
-          setIsSuperAdmin(snap.exists() && snap.data().role === "super_admin");
-        } catch (_) { setIsSuperAdmin(false); }
-      } else {
-        setIsSuperAdmin(false);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
   const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      navigate('/admin/login');
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
+    await logout();
+    navigate('/admin/login');
   };
 
+  // Pages not yet moved off Firebase (campaigns, promos, blog, rooms) are
+  // left out until they are ported to the API.
   const adminLinks = [
     { href: '/dashboard',    label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/events',       label: 'Events',    icon: House },
     { href: '/scanner',      label: 'Scanner',   icon: ScanLine },
     { href: '/guests',       label: 'Guests',    icon: Users },
-    { href: '/events',       label: 'Events',    icon: House },
-    { href: '/campaigns',    label: 'Campaigns', icon: MessageSquare },
-    { href: '/promo-codes',  label: 'Promos',    icon: Tag },
-    { href: '/payouts',      label: 'Payouts',   icon: Wallet },
-    { href: '/blog-manager', label: 'Blog',      icon: BookOpen },
-    { href: '/register',     label: 'Register',  icon: QrCode },
-    { href: '/settings',     label: 'Settings',  icon: Settings },
+    { href: '/payouts',      label: 'Wallet',    icon: Wallet },
+    { href: '/settings',     label: 'Business',  icon: Settings },
     ...(isSuperAdmin ? [{ href: '/super-admin', label: 'Admin', icon: ShieldCheck }] : []),
   ];
 

@@ -21,6 +21,13 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       workbox: {
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MiB
+        // A new deploy takes over on the next load instead of waiting for
+        // every tab to close — otherwise visitors keep running an old build.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        // API calls and uploaded images must never get the SPA shell.
+        navigateFallbackDenylist: [/^\/api\//, /^\/storage\//],
       },
       includeAssets: ["favicon.png"], // your favicon
       manifest: {

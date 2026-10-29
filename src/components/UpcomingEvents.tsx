@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  collectionGroup, getDocs, orderBy, query, limit,
-} from "firebase/firestore";
-import { db } from "@/firebase/firebase";
+import { fetchPublicEvents } from "@/lib/api";
 import { Calendar, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -36,20 +33,6 @@ function dateLabel(startDate: string): string {
   return date.toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function mapDoc(doc: any): Event {
-  const e = doc.data();
-  const now = new Date().toISOString();
-  return {
-    id:        doc.id,
-    title:     e.title,
-    price:     e.price,
-    image:     e.images?.[0] ?? "",
-    startDate: e.startDate,
-    link:      `/events/${e.tenantId}/${doc.id}`,
-    isPast:    e.startDate < now,
-  };
-}
-
 export default function UpcomingEvents() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,27 +42,8 @@ export default function UpcomingEvents() {
       try {
         // Single query — same index that already existed (orderBy startDate asc)
         // Fetch enough to find MAX_EVENTS with images after client-side filtering
-        const snap = await getDocs(
-          query(
-            collectionGroup(db, "events"),
-            orderBy("startDate", "asc"),
-            limit(100)
-          )
-        );
-
-        const now = new Date().toISOString();
-        const all = snap.docs.map(mapDoc).filter(e => e.image);
-
-        // Upcoming: already asc ordered, soonest first
-        const upcoming = all.filter(e => !e.isPast);
-
-        // Recent past: reverse so most-recently-past comes first
-        const recentPast = all.filter(e => e.isPast).reverse();
-
-        // Upcoming first, fill remainder with recent past
-        const combined = [...upcoming, ...recentPast].slice(0, MAX_EVENTS);
-
-        setEvents(combined);
+        const all = await fetchPublicEvents();
+        setEvents(all.filter(e => e.image).slice(0, MAX_EVENTS));
       } catch (error) {
         console.error("Error loading upcoming events", error);
       } finally {

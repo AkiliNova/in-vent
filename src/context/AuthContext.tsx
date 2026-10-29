@@ -1,97 +1,77 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { auth, db } from "@/firebase/firebase";
-import { 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
-  signOut,
-  User,
-  setPersistence,
-  browserLocalPersistence
-} from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
+import { api, tokenStore, AuthUser } from "@/lib/api";
+
+interface RegisterInput {
+  organization_name: string;
+  name: string;
+  email: string;
+  phone?: string;
+  password: string;
+  password_confirmation: string;
+  business_type?: string;
+  package?: string;
+}
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<User>;
+  login: (email: string, password: string) => Promise<AuthUser>;
+  register: (input: RegisterInput) => Promise<AuthUser>;
   logout: () => Promise<void>;
+  refresh: () => Promise<void>;
   isAuthenticated: boolean;
+  /** Tenant uuid. Kept under the old name so existing pages still compile. */
   tenantId: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tenantId, setTenantId] = useState<string | null>(
-    localStorage.getItem("tenantId") || null
-  );
 
-  // Listen for auth state changes
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-
-      if (currentUser) {
-        try {
-          const adminDoc = await getDoc(doc(db, "admins", currentUser.uid));
-          if (adminDoc.exists()) {
-            const tid = adminDoc.data().tenantId || null;
-            setTenantId(tid);
-            localStorage.setItem("tenantId", tid || "");
-          } else {
-            // Admin doc missing — maybe new user not onboarded yet
-            setTenantId(null);
-            localStorage.removeItem("tenantId");
-          }
-        } catch (err) {
-          console.error("Failed to fetch tenantId:", err);
-          setTenantId(null);
-          localStorage.removeItem("tenantId");
-        }
-      } else {
-        setTenantId(null);
-        localStorage.removeItem("tenantId");
-      }
-
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+  const refresh = useCallback(async () => {
+    if (!tokenStore.get()) {
+      setUser(null);
+      return;
+    }
+    try {
+      const { user } = await api.get<{ user: AuthUser }>("auth/me");
+      setUser(user);
+    } catch {
+      setUser(null);
+    }
   }, []);
 
-  // Login with email/password
+  useEffect(() => {
+    refresh().finally(() => setLoading(false));
+
+    // api.ts fires this when the server rejects the stored token.
+    const onLogout = () => setUser(null);
+    window.addEventListener("tikooh:logout", onLogout);
+    return () => window.removeEventListener("tikooh:logout", onLogout);
+  }, [refresh]);
+
   const login = async (email: string, password: string) => {
-    await setPersistence(auth, browserLocalPersistence); // persist session
-    const res = await signInWithEmailAndPassword(auth, email, password);
+    const res = await api.post<{ token: string; user: AuthUser }>("auth/login", { email, password });
+    tokenStore.set(res.token);
     setUser(res.user);
-
-    try {
-      const adminDoc = await getDoc(doc(db, "admins", res.user.uid));
-      if (adminDoc.exists()) {
-        const tid = adminDoc.data().tenantId || null;
-        setTenantId(tid);
-        localStorage.setItem("tenantId", tid || "");
-      } else {
-        setTenantId(null);
-        localStorage.removeItem("tenantId");
-      }
-    } catch (err) {
-      console.error("Failed to fetch tenantId on login:", err);
-      setTenantId(null);
-      localStorage.removeItem("tenantId");
-    }
-
     return res.user;
   };
 
-  // Logout
+  const register = async (input: RegisterInput) => {
+    const res = await api.post<{ token: string; user: AuthUser }>("auth/register", { ...input });
+    tokenStore.set(res.token);
+    // Register returns a slimmer user; fetch the full one.
+    const { user } = await api.get<{ user: AuthUser }>("auth/me");
+    setUser(user);
+    return user;
+  };
+
   const logout = async () => {
-    await signOut(auth);
+    try { await api.post("auth/logout"); } catch { /* token may already be gone */ }
+    tokenStore.clear();
     setUser(null);
-    setTenantId(null);
-    localStorage.removeItem("tenantId");
   };
 
   return (
@@ -100,9 +80,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         user,
         loading,
         login,
+        register,
         logout,
+        refresh,
         isAuthenticated: !!user,
-        tenantId,
+        tenantId: user?.tenant?.uuid ?? null,
       }}
     >
       {!loading && children}
@@ -110,7 +92,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-// Hook to use auth context
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used inside AuthProvider");

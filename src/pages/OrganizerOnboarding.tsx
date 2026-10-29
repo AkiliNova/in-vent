@@ -1,336 +1,296 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check } from "lucide-react";
+import { PasswordInput } from "@/components/ui/password-input";
+import { Label } from "@/components/ui/label";
+import {
+  Building2, User, Users, Church, GraduationCap, HeartHandshake, Sparkles,
+  Check, Smartphone, Wallet, ArrowRight, ArrowLeft, CalendarPlus,
+} from "lucide-react";
+import { api, errorMessage } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
-import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/firebase/firebase";
+const BUSINESS_TYPES = [
+  { id: "individual", label: "Individual", hint: "Solo organiser or creator", icon: User },
+  { id: "company", label: "Company", hint: "Registered business", icon: Building2 },
+  { id: "ngo", label: "NGO", hint: "Non-profit or foundation", icon: HeartHandshake },
+  { id: "church", label: "Church", hint: "Faith community", icon: Church },
+  { id: "school", label: "School", hint: "School or university", icon: GraduationCap },
+  { id: "other", label: "Other", hint: "Club, group, association", icon: Users },
+];
 
-interface FormData {
-  organizationName: string;
-  contactPerson: string;
-  email: string;
-  phone: string;
-  password: string;
-  package: string | null;
-}
-
-interface Package {
-  id: string;
-  name: string;
-  price: string;
-  features: string[];
-}
+const STEPS = ["Your business", "Your account", "Get paid", "Done"];
 
 const OrganizerOnboarding: React.FC = () => {
-  const [step, setStep] = useState<number>(1);
-  const [dialogOpen, setDialogOpen] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
+  const navigate = useNavigate();
+  const { register, user } = useAuth();
 
-  const [formData, setFormData] = useState<FormData>({
-    organizationName: "",
-    contactPerson: "",
+  // Someone already signed in lands on the payout step, not the sign-up form.
+  const [step, setStep] = useState(user ? 2 : 0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [form, setForm] = useState({
+    organization_name: "",
+    business_type: "",
+    name: "",
     email: "",
     phone: "",
     password: "",
-    package: null,
+    password_confirmation: "",
+    payout_phone: "",
+    payout_name: "",
   });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const navigate = useNavigate();
-
-  const packages: Package[] = [
-    {
-      id: "basic",
-      name: "Basic",
-      price: "KSh 1,500 / event",
-      features: ["QR Code Check-In", "Guest List Management", "Basic Analytics"],
-    },
-    {
-      id: "pro",
-      name: "Pro",
-      price: "KSh 3,500 / event",
-      features: [
-        "Everything in Basic",
-        "Real-Time Scan Dashboard",
-        "Bulk SMS Invites",
-        "Unlimited Guests",
-      ],
-    },
-    {
-      id: "enterprise",
-      name: "Enterprise",
-      price: "Custom Pricing",
-      features: [
-        "Unlimited Events",
-        "Custom Branding",
-        "Dedicated Support",
-        "Advanced Analytics",
-      ],
-    },
-  ];
-
-  const selectedPackage = packages.find((p) => p.id === formData.package);
-
-  const handleNext = () => setStep((prev) => prev + 1);
-  const handleBack = () => setStep((prev) => prev - 1);
-
-  const completeOnboarding = async () => {
-    if (!formData.email || !formData.password || !formData.organizationName) return;
-
-    setLoading(true);
+  const createAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (form.password !== form.password_confirmation) {
+      setError("The passwords don't match.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
     try {
-      const auth = getAuth();
-
-      // 1️⃣ Create Firebase Auth User
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        formData.email,
-        formData.password
-      );
-      const user = userCredential.user;
-
-      // 2️⃣ Create Tenant in Firestore
-      const tenantRef = doc(db, "tenants", user.uid);
-      await setDoc(tenantRef, {
-        organizationName: formData.organizationName,
-        contactPerson: formData.contactPerson,
-        email: formData.email,
-        phone: formData.phone,
-        package: formData.package,
-        createdAt: serverTimestamp(),
-        admins: [user.uid], // organizer is the admin
+      await register({
+        organization_name: form.organization_name,
+        business_type: form.business_type,
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        password: form.password,
+        password_confirmation: form.password_confirmation,
       });
-
-      // 3️⃣ Create Admin doc for multi-tenant lookup
-      const adminRef = doc(db, "admins", user.uid);
-      await setDoc(adminRef, {
-        email: formData.email,
-        tenantId: user.uid,
-        role: "admin",
-        createdAt: serverTimestamp(),
-      });
-
-      // 4️⃣ Navigate to dashboard
-      navigate("/dashboard");
-    } catch (error: any) {
-      console.error("Error creating tenant/admin:", error);
-      alert(error.message || "Failed to create account. Please try again.");
+      setForm((f) => ({ ...f, payout_phone: f.phone, payout_name: f.name }));
+      setStep(2);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
-      setLoading(false);
+      setBusy(false);
+    }
+  };
+
+  const savePayout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.put("merchant/payout", {
+        payout_phone: form.payout_phone,
+        payout_name: form.payout_name,
+        password: form.password,
+      });
+      setStep(3);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full px-6 pt-32 pb-20 bg-background">
-      <div className="max-w-3xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6">
-          {step === 1 && "Create Your Organizer Account"}
-          {step === 2 && "Select a Package"}
-          {step === 3 && "Review & Confirm"}
-        </h1>
+    <div className="min-h-screen w-full bg-background px-4 py-10 md:py-16">
+      <div className="max-w-xl mx-auto">
+        <Link to="/" className="inline-block mb-8">
+          <img src="/assets/logo.png" alt="Tikooh" className="h-10 object-contain" />
+        </Link>
 
-        {/* STEP 1 — Organizer Info */}
+        {/* Progress */}
+        <ol className="flex items-center gap-2 mb-8" aria-label="Sign-up progress">
+          {STEPS.map((label, i) => (
+            <li key={label} className="flex-1">
+              <div className={`h-1.5 rounded-full transition-colors ${i <= step ? "bg-primary" : "bg-secondary"}`} />
+              <span className={`hidden sm:block text-xs mt-2 ${i === step ? "text-foreground" : "text-muted-foreground"}`}>
+                {label}
+              </span>
+            </li>
+          ))}
+        </ol>
+
+        {error && (
+          <div role="alert" className="mb-5 p-3 text-sm text-destructive bg-destructive/15 rounded-lg">{error}</div>
+        )}
+
+        {/* 1 — Business */}
+        {step === 0 && (
+          <form
+            className="space-y-6"
+            onSubmit={(e) => { e.preventDefault(); setError(null); setStep(1); }}
+          >
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">Sell tickets with M-Pesa</h1>
+              <p className="text-muted-foreground mt-2">
+                Set up in two minutes. Buyers pay by M-Pesa, the money lands in your Tikooh wallet,
+                and you withdraw to your phone whenever you like.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="org">Organisation or brand name</Label>
+              <Input id="org" required value={form.organization_name} onChange={set("organization_name")}
+                placeholder="e.g. Nairobi Jazz Collective" />
+              <p className="text-xs text-muted-foreground">Shown to buyers on your event pages.</p>
+            </div>
+
+            <fieldset>
+              <legend className="text-sm font-medium mb-2">What kind of organiser are you?</legend>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {BUSINESS_TYPES.map((t) => {
+                  const selected = form.business_type === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => setForm((f) => ({ ...f, business_type: t.id }))}
+                      className={`text-left rounded-xl border p-3 transition-colors ${
+                        selected ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <t.icon className={`w-5 h-5 mb-2 ${selected ? "text-primary" : "text-muted-foreground"}`} />
+                      <div className="text-sm font-medium text-foreground">{t.label}</div>
+                      <div className="text-xs text-muted-foreground">{t.hint}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            <div className="flex justify-between items-center">
+              <Link to="/admin/login" className="text-sm text-muted-foreground hover:text-foreground">
+                Already have an account?
+              </Link>
+              <Button type="submit" disabled={!form.organization_name || !form.business_type}>
+                Continue <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {/* 2 — Account */}
         {step === 1 && (
-          <Card className="p-6">
-            <div className="grid grid-cols-1 gap-4">
-              <Input
-                placeholder="Organization Name"
-                value={formData.organizationName}
-                onChange={(e) =>
-                  setFormData({ ...formData, organizationName: e.target.value })
-                }
-              />
-              <Input
-                placeholder="Contact Person"
-                value={formData.contactPerson}
-                onChange={(e) =>
-                  setFormData({ ...formData, contactPerson: e.target.value })
-                }
-              />
-              <Input
-                placeholder="Email Address"
-                type="email"
-                value={formData.email}
-                onChange={(e) =>
-                  setFormData({ ...formData, email: e.target.value })
-                }
-              />
-              <Input
-                placeholder="Phone Number"
-                value={formData.phone}
-                onChange={(e) =>
-                  setFormData({ ...formData, phone: e.target.value })
-                }
-              />
-              <Input
-                placeholder="Password"
-                type="password"
-                value={formData.password}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-              />
+          <form className="space-y-5" onSubmit={createAccount}>
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">Create your login</h1>
+              <p className="text-muted-foreground mt-2">You'll use this to manage events and withdraw earnings.</p>
+            </div>
 
-              <div className="flex justify-between mt-6">
-                <Button variant="ghost" asChild>
-                  <Link to="/">Cancel</Link>
-                </Button>
-                <Button
-                  onClick={handleNext}
-                  disabled={
-                    !formData.organizationName ||
-                    !formData.email ||
-                    !formData.password
-                  }
-                >
-                  Continue
-                </Button>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="name">Your full name</Label>
+                <Input id="name" required autoComplete="name" value={form.name} onChange={set("name")} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="phone">Phone</Label>
+                <Input id="phone" type="tel" autoComplete="tel" placeholder="0712 345 678"
+                  value={form.phone} onChange={set("phone")} />
               </div>
             </div>
-          </Card>
-        )}
-
-        {/* STEP 2 — Package Selection */}
-        {step === 2 && (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {packages.map((pkg) => {
-                const selected = formData.package === pkg.id;
-                return (
-                  <Card
-                    key={pkg.id}
-                    className={`cursor-pointer border-2 transition-all relative ${
-                      selected
-                        ? "border-primary ring-2 ring-primary/30 bg-primary/5 shadow-lg"
-                        : "border-muted hover:border-primary/40 hover:shadow-md"
-                    }`}
-                    onClick={() => setFormData({ ...formData, package: pkg.id })}
-                  >
-                    {selected && (
-                      <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                        <Check className="w-3.5 h-3.5 text-primary-foreground" />
-                      </div>
-                    )}
-                    <CardHeader>
-                      <CardTitle className={`text-xl font-bold ${selected ? "text-primary" : ""}`}>{pkg.name}</CardTitle>
-                      <p className="text-muted-foreground">{pkg.price}</p>
-                    </CardHeader>
-
-                    <CardContent>
-                      <ul className="space-y-2">
-                        {pkg.features.map((feat, i) => (
-                          <li key={i} className="flex items-center gap-2">
-                            <Check className="w-4 h-4 text-primary" />
-                            <span>{feat}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" type="email" required autoComplete="email" value={form.email} onChange={set("email")} />
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="pw">Password</Label>
+                <PasswordInput id="pw" required minLength={8} autoComplete="new-password"
+                  value={form.password} onChange={set("password")} />
+                <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pw2">Confirm password</Label>
+                <PasswordInput id="pw2" required minLength={8} autoComplete="new-password"
+                  value={form.password_confirmation} onChange={set("password_confirmation")} />
+              </div>
             </div>
 
-            <div className="flex justify-between mt-8">
-              <Button variant="ghost" onClick={handleBack}>
-                Back
-              </Button>
-
-              <Button onClick={handleNext} disabled={!formData.package}>
-                Continue
-              </Button>
+            <div className="rounded-xl bg-secondary/60 p-4 text-sm text-muted-foreground">
+              <strong className="text-foreground">Pricing:</strong> no monthly fee. Tikooh keeps 10% of each ticket
+              sold; free events are free.
             </div>
-          </>
-        )}
-
-        {/* STEP 3 — Review & Checkout */}
-        {step === 3 && (
-          <Card className="p-6 space-y-4">
-            <h2 className="text-2xl font-semibold">Review Your Selection</h2>
-
-            <div className="border rounded-lg p-4 space-y-1">
-              <p>
-                <strong>Organization:</strong> {formData.organizationName}
-              </p>
-              <p>
-                <strong>Email:</strong> {formData.email}
-              </p>
-              <p>
-                <strong>Package:</strong> {selectedPackage?.name}
-              </p>
-              <p>
-                <strong>Price:</strong> {selectedPackage?.price}
-              </p>
-            </div>
-
-            <p className="text-muted-foreground">
-              Proceed to checkout to activate your organizer account.
-            </p>
 
             <div className="flex justify-between">
-              <Button variant="ghost" onClick={handleBack}>
-                Back
+              <Button type="button" variant="ghost" onClick={() => setStep(0)}>
+                <ArrowLeft className="w-4 h-4 mr-1" /> Back
               </Button>
-
-              {/* Dialog Trigger */}
-              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button disabled={loading}>
-                    {loading ? "Creating..." : "Proceed to Checkout"}
-                  </Button>
-                </DialogTrigger>
-
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Confirm Checkout</DialogTitle>
-                    <DialogDescription>
-                      You are about to sign up for the{" "}
-                      <strong>{selectedPackage?.name}</strong> package.
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <div className="p-4 border rounded-lg">
-                    <p>
-                      <strong>Organization:</strong> {formData.organizationName}
-                    </p>
-                    <p>
-                      <strong>Email:</strong> {formData.email}
-                    </p>
-                    <p>
-                      <strong>Package:</strong> {selectedPackage?.name}
-                    </p>
-                    <p>
-                      <strong>Price:</strong> {selectedPackage?.price}
-                    </p>
-                  </div>
-
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                      Cancel
-                    </Button>
-
-                    <Button onClick={completeOnboarding} disabled={loading}>
-                      {loading ? "Creating Tenant..." : "Confirm & Continue"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+              <Button type="submit" disabled={busy}>
+                {busy ? "Creating account…" : "Create account"}
+              </Button>
             </div>
-          </Card>
+          </form>
+        )}
+
+        {/* 3 — Payout */}
+        {step === 2 && (
+          <form className="space-y-5" onSubmit={savePayout}>
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">Where should we send your money?</h1>
+              <p className="text-muted-foreground mt-2">
+                Withdrawals go straight to this M-Pesa number. To change it later you'll need your password.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 text-center text-xs text-muted-foreground">
+              {[
+                { icon: Smartphone, t: "Buyer pays by M-Pesa" },
+                { icon: Wallet, t: "Lands in your wallet" },
+                { icon: ArrowRight, t: "Withdraw any time" },
+              ].map((s) => (
+                <div key={s.t} className="rounded-xl bg-secondary/60 p-3">
+                  <s.icon className="w-5 h-5 mx-auto mb-1.5 text-primary" />
+                  {s.t}
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="pp">M-Pesa number</Label>
+              <Input id="pp" type="tel" required placeholder="0712 345 678"
+                value={form.payout_phone} onChange={set("payout_phone")} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pn">Name registered on that number</Label>
+              <Input id="pn" required value={form.payout_name} onChange={set("payout_name")} />
+              <p className="text-xs text-muted-foreground">Helps us confirm the money reaches the right person.</p>
+            </div>
+            {!form.password && (
+              <div className="space-y-1.5">
+                <Label htmlFor="cpw">Your Tikooh password</Label>
+                <PasswordInput id="cpw" required autoComplete="current-password"
+                  value={form.password} onChange={set("password")} />
+              </div>
+            )}
+
+            <div className="flex justify-between">
+              <Button type="button" variant="ghost" onClick={() => setStep(3)}>Skip for now</Button>
+              <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save payout number"}</Button>
+            </div>
+          </form>
+        )}
+
+        {/* 4 — Done */}
+        {step === 3 && (
+          <div className="text-center space-y-6 py-6">
+            <div className="w-16 h-16 rounded-full bg-primary/15 flex items-center justify-center mx-auto">
+              <Check className="w-8 h-8 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">You're ready to sell</h1>
+              <p className="text-muted-foreground mt-2">
+                Create your event, add ticket types, publish — and share the link.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button size="lg" onClick={() => navigate("/events?new=1")}>
+                <CalendarPlus className="w-4 h-4 mr-2" /> Create your first event
+              </Button>
+              <Button size="lg" variant="outline" onClick={() => navigate("/dashboard")}>
+                <Sparkles className="w-4 h-4 mr-2" /> Go to dashboard
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </div>

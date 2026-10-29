@@ -1,529 +1,356 @@
-"use client";
-
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, ImageIcon, Ticket, Globe, EyeOff, BellRing, CalendarDays } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogFooter,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import Navigation from '@/components/Navigation';
-import { toast } from '@/hooks/use-toast';
+  Plus, Pencil, Trash2, Globe, CalendarDays, MapPin, Copy, ExternalLink, ImageIcon, Ticket, Loader2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import Navigation from "@/components/Navigation";
+import { toast } from "@/hooks/use-toast";
+import { api, errorMessage, kes, EventItem, TicketTier } from "@/lib/api";
 
-import { db } from '@/firebase/firebase';
-import {
-  collection, addDoc, updateDoc, deleteDoc, doc,
-  onSnapshot, serverTimestamp, getDocs,
-} from 'firebase/firestore';
-
-interface TicketTier {
+interface TierDraft {
+  id?: number;
+  uuid?: string;
   name: string;
-  price: number;
-  capacity: number;
-  sold: number;
-  description?: string;
-}
-
-interface Event {
-  id: string;
-  tenantId: string;
-  title: string;
-  price: number;
-  host: string;
+  price: string;
+  capacity: string;
   description: string;
-  startDate: string;
-  endDate?: string;
-  locationName: string;
-  city?: string;
-  eventType?: string;
-  locationMapLink?: string;
-  images: string[];
-  link?: string;
-  ticketTiers?: TicketTier[];
-  status?: 'draft' | 'published';
+  sold?: number;
 }
 
-const defaultTier = (): TicketTier => ({ name: '', price: 0, capacity: 100, sold: 0, description: '' });
+const emptyForm = {
+  title: "", description: "", host: "", event_type: "",
+  start_date: "", end_date: "", location_name: "", city: "", location_map_link: "",
+};
 
-const EventsDashboard = ({ tenantId }: { tenantId: string }) => {
-  const navigate = useNavigate();
-  const [events, setEvents] = useState<Event[]>([]);
-  const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
-  const [form, setForm] = useState({
-    title: '',
-    price: 0,
-    host: '',
-    description: '',
-    startDate: '',
-    endDate: '',
-    locationName: '',
-    city: '',
-    eventType: '',
-    locationMapLink: '',
-  });
-  const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([defaultTier()]);
-  const [images, setImages] = useState<File[]>([]);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [step, setStep] = useState(1);
+const newTier = (): TierDraft => ({ name: "General Admission", price: "0", capacity: "100", description: "" });
 
-  const eventsRef = collection(db, `tenants/${tenantId}/events`);
+/** "2026-10-29T18:00:00.000000Z" → value for <input type="datetime-local"> in local time. */
+const toLocalInput = (iso?: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
+export const publicEventUrl = (uuid: string) => `${window.location.origin}/e/${uuid}`;
+
+const EventsDashboard = () => {
+  const [params, setParams] = useSearchParams();
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<EventItem | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [tiers, setTiers] = useState<TierDraft[]>([newTier()]);
+  const [removedTierIds, setRemovedTierIds] = useState<string[]>([]);
+  const [cover, setCover] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    try {
+      const res = await api.get<{ data: EventItem[] }>("events?per_page=100");
+      setEvents(res.data);
+    } catch (e) {
+      toast({ title: "Couldn't load events", description: errorMessage(e), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  // /events?new=1 from onboarding opens the form straight away.
   useEffect(() => {
-    const unsubscribe = onSnapshot(eventsRef, async (snapshot) => {
-      const data: Event[] = snapshot.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<Event, 'id'>),
-      }));
-      setEvents(data);
+    if (params.get("new")) {
+      openCreate();
+      setParams({}, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-      // Fetch waitlist counts for each event
-      const counts: Record<string, number> = {};
-      await Promise.all(data.map(async (ev) => {
-        try {
-          const wSnap = await getDocs(collection(db, `tenants/${tenantId}/events/${ev.id}/waitlist`));
-          counts[ev.id] = wSnap.size;
-        } catch (_) { counts[ev.id] = 0; }
-      }));
-      setWaitlistCounts(counts);
-    });
-    return () => unsubscribe();
-  }, [tenantId]);
-
-  const openAddModal = () => {
-    setEditingEvent(null);
-    setForm({ title: '', price: 0, host: '', description: '', startDate: '', endDate: '', locationName: '', city: '', eventType: '', locationMapLink: '' });
-    setTicketTiers([defaultTier()]);
-    setImages([]);
-    setStep(1);
-    setModalOpen(true);
+  const openCreate = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setTiers([newTier()]);
+    setRemovedTierIds([]);
+    setCover(null);
+    setOpen(true);
   };
 
-  const openEditModal = (event: Event) => {
-    setEditingEvent(event);
-    setForm({
-      title: event.title,
-      price: event.price,
-      host: event.host,
-      description: event.description,
-      startDate: event.startDate,
-      endDate: event.endDate || '',
-      locationName: event.locationName,
-      city: event.city || '',
-      eventType: event.eventType || '',
-      locationMapLink: event.locationMapLink || '',
-    });
-    setTicketTiers(event.ticketTiers?.length ? event.ticketTiers : [defaultTier()]);
-    setImages([]);
-    setStep(1);
-    setModalOpen(true);
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) setImages(Array.from(e.target.files));
-  };
-
-  const uploadImagesToServer = async (files: File[]) => {
-    if (!files.length) return [];
-    const formData = new FormData();
-    files.forEach((file) => formData.append('images[]', file));
-    formData.append('folder', `events/${tenantId}`);
+  const openEdit = async (ev: EventItem) => {
     try {
-      const res = await fetch('https://share.akisolve.com/tikooh/upload_events.php', { method: 'POST', body: formData });
-      if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
-      const data = await res.json();
-      if (!data.success) throw new Error(data.message || 'Upload failed');
-      return data.uploaded;
-    } catch (error: any) {
-      toast({ title: 'Upload Failed', description: error.message, variant: 'destructive' });
-      return [];
+      const full = await api.get<EventItem>(`events/${ev.uuid}`);
+      setEditing(full);
+      setForm({
+        title: full.title, description: full.description || "", host: full.host || "",
+        event_type: full.event_type || "", start_date: toLocalInput(full.start_date),
+        end_date: toLocalInput(full.end_date), location_name: full.location_name || "",
+        city: full.city || "", location_map_link: full.location_map_link || "",
+      });
+      setTiers((full.ticket_tiers || []).map((t: TicketTier) => ({
+        id: t.id, uuid: t.uuid, name: t.name, price: String(Number(t.price)), capacity: String(t.capacity),
+        description: t.description || "", sold: t.sold,
+      })));
+      setRemovedTierIds([]);
+      setCover(null);
+      setOpen(true);
+    } catch (e) {
+      toast({ title: "Couldn't open event", description: errorMessage(e), variant: "destructive" });
     }
   };
 
-  // Ticket tier helpers
-  const updateTier = (index: number, field: keyof TicketTier, value: string | number) => {
-    setTicketTiers(prev => prev.map((t, i) => i === index ? { ...t, [field]: value } : t));
-  };
-
-  const addTier = () => setTicketTiers(prev => [...prev, defaultTier()]);
-  const removeTier = (index: number) => setTicketTiers(prev => prev.filter((_, i) => i !== index));
-
-  const saveEvent = async () => {
-    if (!form.title || !form.host || !form.description || !form.startDate) {
-      toast({ title: 'Invalid Input', description: 'Please fill in all required fields.', variant: 'destructive' });
+  const save = async (publish: boolean) => {
+    if (!form.title || !form.start_date) {
+      toast({ title: "Add a title and start date", variant: "destructive" });
+      return;
+    }
+    if (publish && tiers.filter((t) => t.name).length === 0) {
+      toast({ title: "Add at least one ticket type before publishing", variant: "destructive" });
       return;
     }
 
-    const validTiers = ticketTiers.filter(t => t.name.trim() && t.price >= 0 && t.capacity > 0);
-    if (validTiers.length === 0) {
-      toast({ title: 'Add at least one ticket tier', description: 'Provide a name, price, and capacity.', variant: 'destructive' });
-      return;
-    }
-
-    setIsSubmitting(true);
+    setSaving(true);
     try {
-      const uploadedImages = images.length > 0 ? await uploadImagesToServer(images) : [];
-      // Use lowest tier price as the event base price
-      const basePrice = Math.min(...validTiers.map(t => t.price));
-
-      const eventData = {
+      const body = {
         ...form,
-        price: basePrice,
-        ticketTiers: validTiers,
+        start_date: new Date(form.start_date).toISOString(),
+        end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
+        location_map_link: form.location_map_link || null,
+        is_public: true,
       };
+      const event = editing
+        ? await api.put<EventItem>(`events/${editing.uuid}`, body)
+        : await api.post<EventItem>("events", body);
 
-      if (editingEvent) {
-        const docRef = doc(db, `tenants/${tenantId}/events`, editingEvent.id);
-        await updateDoc(docRef, {
-          ...eventData,
-          images: [...(editingEvent.images || []), ...uploadedImages],
-          updatedAt: serverTimestamp(),
-        });
-        toast({ title: 'Event Updated', description: `${form.title} updated.` });
-      } else {
-        await addDoc(eventsRef, {
-          ...eventData,
-          images: uploadedImages,
-          tenantId,
-          status: 'draft',
-          createdAt: serverTimestamp(),
-        });
-        toast({ title: 'Event Created', description: `${form.title} is live.` });
+      for (const id of removedTierIds) {
+        await api.delete(`events/${event.uuid}/tiers/${id}`);
+      }
+      for (const t of tiers.filter((t) => t.name.trim())) {
+        const tierBody = {
+          name: t.name, description: t.description || null,
+          price: Number(t.price) || 0, capacity: Number(t.capacity) || 0, is_active: true,
+        };
+        if (t.uuid) await api.put(`events/${event.uuid}/tiers/${t.uuid}`, tierBody);
+        else await api.post(`events/${event.uuid}/tiers`, tierBody);
       }
 
-      setModalOpen(false);
-      setImages([]);
-      setUploadProgress(0);
-      setStep(1);
-    } catch (error: any) {
-      toast({ title: 'Failed to Save', description: error.message, variant: 'destructive' });
+      if (cover) {
+        const fd = new FormData();
+        fd.append("image", cover);
+        await api.post(`events/${event.uuid}/cover`, fd);
+      }
+
+      if (publish) await api.post(`events/${event.uuid}/publish`);
+
+      toast({
+        title: publish ? "Event published" : "Event saved",
+        description: publish ? "Your ticket page is live — copy the link to share it." : undefined,
+      });
+      setOpen(false);
+      load();
+    } catch (e) {
+      toast({ title: "Couldn't save", description: errorMessage(e), variant: "destructive" });
     } finally {
-      setIsSubmitting(false);
+      setSaving(false);
     }
   };
 
-  const togglePublish = async (event: Event) => {
-    const newStatus = event.status === 'published' ? 'draft' : 'published';
+  const remove = async (ev: EventItem) => {
+    if (!window.confirm(`Delete "${ev.title}"? This can't be undone.`)) return;
     try {
-      await updateDoc(doc(db, `tenants/${tenantId}/events`, event.id), { status: newStatus, updatedAt: serverTimestamp() });
-      toast({ title: newStatus === 'published' ? 'Event published!' : 'Event moved to draft' });
-    } catch (error: any) {
-      toast({ title: 'Failed to update', description: error.message, variant: 'destructive' });
+      await api.delete(`events/${ev.uuid}`);
+      setEvents((list) => list.filter((e) => e.id !== ev.id));
+    } catch (e) {
+      toast({ title: "Couldn't delete", description: errorMessage(e), variant: "destructive" });
     }
   };
 
-  const deleteEvent = async (eventId: string) => {
-    if (!confirm('Delete this event?')) return;
-    try {
-      await deleteDoc(doc(db, `tenants/${tenantId}/events`, eventId));
-      toast({ title: 'Deleted', description: 'Event removed.' });
-    } catch (error: any) {
-      toast({ title: 'Failed to Delete', description: error.message, variant: 'destructive' });
-    }
+  const copyLink = (ev: EventItem) => {
+    navigator.clipboard.writeText(publicEventUrl(ev.uuid));
+    toast({ title: "Link copied", description: publicEventUrl(ev.uuid) });
   };
 
-  const totalCapacity = (tiers?: TicketTier[]) => tiers?.reduce((s, t) => s + t.capacity, 0) ?? 0;
-  const totalSold = (tiers?: TicketTier[]) => tiers?.reduce((s, t) => s + (t.sold || 0), 0) ?? 0;
+  const setF = (k: keyof typeof emptyForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const setTier = (i: number, k: keyof TierDraft, v: string) =>
+    setTiers((list) => list.map((t, idx) => (idx === i ? { ...t, [k]: v } : t)));
 
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
-      <main className="pt-24 pb-12 px-6">
+      <main className="pt-24 pb-12 px-4 md:px-6">
         <div className="container mx-auto max-w-5xl">
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center justify-between gap-4 mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Events Dashboard</h1>
-              <p className="text-muted-foreground">Manage events and ticket tiers</p>
+              <h1 className="text-3xl font-bold text-foreground">Events</h1>
+              <p className="text-muted-foreground">Create an event, add ticket types, publish and share.</p>
             </div>
-            <Button variant="hero" onClick={openAddModal}>
-              <Plus className="w-4 h-4 mr-2" /> Add Event
-            </Button>
+            <Button onClick={openCreate}><Plus className="w-4 h-4 mr-2" /> New event</Button>
           </div>
 
-          {/* Events Grid */}
-          <div className="grid md:grid-cols-2 gap-6">
-            {events.map((event) => {
-              const cap = totalCapacity(event.ticketTiers);
-              const sold = totalSold(event.ticketTiers);
-              const pct = cap > 0 ? Math.round((sold / cap) * 100) : 0;
-
-              return (
-                <div key={event.id} className="glass rounded-2xl p-6 space-y-3 hover:shadow-lg transition-all">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <ImageIcon className="w-5 h-5 text-primary" />
-                      <h2 className="text-lg font-semibold text-foreground">{event.title}</h2>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={event.status === 'published'
-                          ? 'border-success/50 text-success bg-success/10'
-                          : 'border-yellow-500/50 text-yellow-500 bg-yellow-500/10'}
-                      >
-                        {event.status === 'published' ? 'Published' : 'Draft'}
+          {loading ? (
+            <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+          ) : events.length === 0 ? (
+            <div className="glass rounded-2xl p-12 text-center">
+              <CalendarDays className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-foreground font-medium mb-1">No events yet</p>
+              <p className="text-muted-foreground text-sm mb-5">Your first event takes about two minutes.</p>
+              <Button onClick={openCreate}><Plus className="w-4 h-4 mr-2" /> Create event</Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {events.map((ev) => (
+                <div key={ev.id} className="glass rounded-2xl p-4 flex flex-col sm:flex-row gap-4">
+                  <div className="w-full sm:w-32 h-32 sm:h-24 rounded-xl bg-secondary overflow-hidden flex-shrink-0">
+                    {ev.cover_url
+                      ? <img src={ev.cover_url} alt="" className="w-full h-full object-cover" />
+                      : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-6 h-6 text-muted-foreground" /></div>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <h2 className="font-semibold text-foreground truncate">{ev.title}</h2>
+                      <Badge variant="outline" className={ev.status === "published" ? "border-success/50 text-success" : "border-yellow-500/50 text-yellow-500"}>
+                        {ev.status}
                       </Badge>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        title={event.status === 'published' ? 'Unpublish' : 'Publish'}
-                        onClick={() => togglePublish(event)}
-                      >
-                        {event.status === 'published'
-                          ? <EyeOff className="w-4 h-4 text-yellow-500" />
-                          : <Globe className="w-4 h-4 text-success" />}
-                      </Button>
-                      <Button variant="outline" size="icon" title="Manage Agenda" onClick={() => navigate(`/agenda/${event.id}`)}>
-                        <CalendarDays className="w-4 h-4 text-primary" />
-                      </Button>
-                      <Button variant="outline" size="icon" onClick={() => openEditModal(event)}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button variant="outline" size="icon" onClick={() => deleteEvent(event.id)}>
-                        <Trash2 className="w-4 h-4 text-destructive" />
+                    </div>
+                    <div className="text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+                      <span className="flex items-center gap-1"><CalendarDays className="w-3.5 h-3.5" />
+                        {new Date(ev.start_date).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" })}</span>
+                      {(ev.location_name || ev.city) && (
+                        <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />
+                          {[ev.location_name, ev.city].filter(Boolean).join(", ")}</span>
+                      )}
+                      <span className="flex items-center gap-1"><Ticket className="w-3.5 h-3.5" />{ev.attendees_count ?? 0} attendees</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {ev.status === "published" && (
+                        <>
+                          <Button size="sm" variant="secondary" onClick={() => copyLink(ev)}><Copy className="w-3.5 h-3.5 mr-1.5" /> Copy link</Button>
+                          <Button size="sm" variant="ghost" asChild>
+                            <Link to={`/e/${ev.uuid}`} target="_blank"><ExternalLink className="w-3.5 h-3.5 mr-1.5" /> View page</Link>
+                          </Button>
+                        </>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(ev)}><Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit</Button>
+                      <Button size="sm" variant="ghost" className="text-destructive" onClick={() => remove(ev)}>
+                        <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
                       </Button>
                     </div>
                   </div>
-
-                  <p className="text-sm text-muted-foreground">Host: {event.host}</p>
-                  <p className="text-sm">{event.description?.slice(0, 100)}{event.description?.length > 100 ? '...' : ''}</p>
-                  <p className="text-sm">
-                    {new Date(event.startDate).toLocaleString()}
-                    {event.endDate && ` — ${new Date(event.endDate).toLocaleString()}`}
-                  </p>
-                  <p className="text-sm">📍 {event.locationName}{event.city ? `, ${event.city}` : ''}</p>
-
-                  {/* Ticket tiers summary */}
-                  {event.ticketTiers?.length ? (
-                    <div className="space-y-2 pt-2 border-t border-border">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Ticket className="w-4 h-4 text-primary" />
-                        <span className="text-sm font-medium">Ticket Tiers</span>
-                        <Badge variant="outline" className="ml-auto text-xs">
-                          {sold}/{cap} sold
-                        </Badge>
-                      </div>
-                      {event.ticketTiers.map((tier, i) => {
-                        const tierPct = tier.capacity > 0 ? Math.round(((tier.sold || 0) / tier.capacity) * 100) : 0;
-                        return (
-                          <div key={i} className="flex items-center justify-between text-xs text-muted-foreground gap-2">
-                            <span className="truncate w-24">{tier.name}</span>
-                            <span>KES {tier.price.toLocaleString()}</span>
-                            <span className={tierPct >= 100 ? 'text-destructive font-semibold' : ''}>
-                              {tier.sold || 0}/{tier.capacity}
-                              {tierPct >= 100 && ' SOLD OUT'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                      <Progress value={pct} className="h-1.5 mt-1" />
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">From KES {event.price?.toLocaleString()}</p>
-                  )}
-
-                  {/* Waitlist count */}
-                  {(waitlistCounts[event.id] || 0) > 0 && (
-                    <div className="flex items-center gap-2 text-xs text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-1.5">
-                      <BellRing className="w-3.5 h-3.5" />
-                      <span><strong>{waitlistCounts[event.id]}</strong> on waitlist</span>
-                    </div>
-                  )}
-
-                  {event.images?.length > 0 && (
-                    <div className="flex gap-2 overflow-x-auto mt-2">
-                      {event.images.slice(0, 3).map((img, i) => (
-                        <img key={i} src={img} className="h-16 w-16 object-cover rounded-md flex-shrink-0" />
-                      ))}
-                    </div>
-                  )}
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
 
-      {/* Modal */}
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="w-full max-w-3xl md:max-w-4xl h-[85vh] rounded-3xl p-6 shadow-xl overflow-y-auto scrollbar-none">
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">
-              {editingEvent ? 'Edit Event' : 'Add Event'} — Step {step}/4
-            </DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground">
-              {step === 1 && 'Basic event info'}
-              {step === 2 && 'Dates, location and host'}
-              {step === 3 && 'Ticket tiers & pricing'}
-              {step === 4 && 'Event images'}
-            </DialogDescription>
+            <DialogTitle>{editing ? "Edit event" : "New event"}</DialogTitle>
+            <DialogDescription>Save as a draft, or publish to open ticket sales.</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 mt-4">
-            {/* STEP 1 — Basic info */}
-            {step === 1 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex flex-col md:col-span-2">
-                  <Label>Event Title *</Label>
-                  <Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="e.g. Nairobi Jazz Night" />
+          <div className="space-y-5">
+            <section className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="t">Event title</Label>
+                <Input id="t" value={form.title} onChange={setF("title")} placeholder="e.g. Sunset Jazz Night" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="d">Description</Label>
+                <Textarea id="d" rows={4} value={form.description} onChange={setF("description")}
+                  placeholder="What should buyers know? Line-up, dress code, what's included…" />
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="h">Hosted by</Label>
+                  <Input id="h" value={form.host} onChange={setF("host")} />
                 </div>
-                <div className="flex flex-col">
-                  <Label>Event Type</Label>
-                  <Input value={form.eventType} onChange={e => setForm({ ...form, eventType: e.target.value })} placeholder="e.g. Concert, Conference" />
-                </div>
-                <div className="flex flex-col">
-                  <Label>Host / Organizer *</Label>
-                  <Input value={form.host} onChange={e => setForm({ ...form, host: e.target.value })} placeholder="Organizer name" />
-                </div>
-                <div className="flex flex-col md:col-span-2">
-                  <Label>Description *</Label>
-                  <textarea
-                    rows={4}
-                    className="border rounded p-2 w-full resize-none bg-transparent text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Describe the event..."
-                    value={form.description}
-                    onChange={e => setForm({ ...form, description: e.target.value })}
-                  />
+                <div className="space-y-1.5">
+                  <Label htmlFor="ty">Category</Label>
+                  <Input id="ty" value={form.event_type} onChange={setF("event_type")} placeholder="Concert, conference…" />
                 </div>
               </div>
-            )}
+            </section>
 
-            {/* STEP 2 — Dates & location */}
-            {step === 2 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex flex-col">
-                  <Label>Start Date *</Label>
-                  <Input type="datetime-local" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
-                </div>
-                <div className="flex flex-col">
-                  <Label>End Date</Label>
-                  <Input type="datetime-local" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} />
-                </div>
-                <div className="flex flex-col">
-                  <Label>Venue Name</Label>
-                  <Input value={form.locationName} onChange={e => setForm({ ...form, locationName: e.target.value })} placeholder="e.g. Carnivore Grounds" />
-                </div>
-                <div className="flex flex-col">
-                  <Label>City</Label>
-                  <Input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="e.g. Nairobi" />
-                </div>
-                <div className="flex flex-col md:col-span-2">
-                  <Label>Google Maps Link</Label>
-                  <Input value={form.locationMapLink} onChange={e => setForm({ ...form, locationMapLink: e.target.value })} placeholder="https://maps.google.com/..." />
-                </div>
+            <section className="grid sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="s">Starts</Label>
+                <Input id="s" type="datetime-local" value={form.start_date} onChange={setF("start_date")} />
               </div>
-            )}
+              <div className="space-y-1.5">
+                <Label htmlFor="e">Ends (optional)</Label>
+                <Input id="e" type="datetime-local" value={form.end_date} onChange={setF("end_date")} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="v">Venue</Label>
+                <Input id="v" value={form.location_name} onChange={setF("location_name")} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="c">Town / city</Label>
+                <Input id="c" value={form.city} onChange={setF("city")} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="m">Google Maps link (optional)</Label>
+                <Input id="m" type="url" value={form.location_map_link} onChange={setF("location_map_link")} />
+              </div>
+            </section>
 
-            {/* STEP 3 — Ticket tiers */}
-            {step === 3 && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">Define ticket categories, prices and how many are available.</p>
-                  <Button variant="outline" size="sm" onClick={addTier}>
-                    <Plus className="w-4 h-4 mr-1" /> Add Tier
-                  </Button>
-                </div>
+            <section className="space-y-1.5">
+              <Label htmlFor="img">Cover image</Label>
+              <Input id="img" type="file" accept="image/jpeg,image/png,image/webp"
+                onChange={(e) => setCover(e.target.files?.[0] || null)} />
+              <p className="text-xs text-muted-foreground">JPG, PNG or WebP, up to 5 MB. Landscape works best.</p>
+            </section>
 
-                {ticketTiers.map((tier, index) => (
-                  <div key={index} className="glass rounded-xl p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold">Tier {index + 1}</span>
-                      {ticketTiers.length > 1 && (
-                        <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => removeTier(index)}>
-                          <Trash2 className="w-3 h-3 text-destructive" />
-                        </Button>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="flex flex-col">
-                        <Label className="text-xs mb-1">Tier Name *</Label>
-                        <Input
-                          value={tier.name}
-                          onChange={e => updateTier(index, 'name', e.target.value)}
-                          placeholder="e.g. Early Bird, VIP, Regular"
-                        />
-                      </div>
-                      <div className="flex flex-col">
-                        <Label className="text-xs mb-1">Price (KES) *</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={tier.price}
-                          onChange={e => updateTier(index, 'price', Number(e.target.value))}
-                          placeholder="0"
-                        />
-                      </div>
-                      <div className="flex flex-col">
-                        <Label className="text-xs mb-1">Available Tickets *</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={tier.capacity}
-                          onChange={e => updateTier(index, 'capacity', Number(e.target.value))}
-                          placeholder="100"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-col">
-                      <Label className="text-xs mb-1">Tier Description (optional)</Label>
-                      <Input
-                        value={tier.description || ''}
-                        onChange={e => updateTier(index, 'description', e.target.value)}
-                        placeholder="e.g. Includes meet & greet"
-                      />
-                    </div>
-                    {tier.capacity > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        {tier.sold || 0} sold · {tier.capacity - (tier.sold || 0)} remaining
-                      </p>
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-medium text-foreground">Ticket types</h3>
+                <Button type="button" size="sm" variant="secondary" onClick={() => setTiers((l) => [...l, { ...newTier(), name: "" }])}>
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Add type
+                </Button>
+              </div>
+              {tiers.map((t, i) => (
+                <div key={t.id ?? `new-${i}`} className="rounded-xl border border-border p-3 space-y-2">
+                  <div className="grid grid-cols-6 gap-2">
+                    <Input className="col-span-6 sm:col-span-3" placeholder="Name, e.g. VIP" value={t.name}
+                      onChange={(e) => setTier(i, "name", e.target.value)} aria-label="Ticket name" />
+                    <Input className="col-span-3 sm:col-span-2" type="number" min={0} placeholder="Price (KES)"
+                      value={t.price} onChange={(e) => setTier(i, "price", e.target.value)} aria-label="Price in KES" />
+                    <Input className="col-span-3 sm:col-span-1" type="number" min={0} placeholder="Qty"
+                      value={t.capacity} onChange={(e) => setTier(i, "capacity", e.target.value)} aria-label="Quantity available" />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {Number(t.price) > 0 ? `${kes(t.price)} · you receive ${kes(Number(t.price) * 0.9)} after the 10% fee` : "Free ticket"}
+                      {t.sold ? ` · ${t.sold} sold` : ""}
+                    </span>
+                    {!t.sold && (
+                      <button type="button" className="text-destructive hover:underline"
+                        onClick={() => {
+                          if (t.uuid) setRemovedTierIds((ids) => [...ids, t.uuid!]);
+                          setTiers((l) => l.filter((_, idx) => idx !== i));
+                        }}>Remove</button>
                     )}
                   </div>
-                ))}
-              </div>
-            )}
-
-            {/* STEP 4 — Images */}
-            {step === 4 && (
-              <div className="flex flex-col gap-4">
-                <Label>Event Images</Label>
-                <input type="file" multiple accept="image/*" onChange={handleImageChange} className="mt-1" />
-                {uploadProgress > 0 && <Progress value={uploadProgress} className="mt-2" />}
-                {editingEvent?.images?.length > 0 && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-2">Current images:</p>
-                    <div className="flex gap-2 flex-wrap">
-                      {editingEvent.images.map((img, i) => (
-                        <img key={i} src={img} className="h-20 w-20 object-cover rounded-md" />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+                </div>
+              ))}
+            </section>
           </div>
 
-          <DialogFooter className="mt-6 flex flex-col sm:flex-row justify-end gap-3">
-            <Button variant="outline" onClick={() => step > 1 ? setStep(step - 1) : setModalOpen(false)}>
-              {step > 1 ? 'Back' : 'Cancel'}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" disabled={saving} onClick={() => save(false)}>Save draft</Button>
+            <Button disabled={saving} onClick={() => save(true)}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Globe className="w-4 h-4 mr-2" />}
+              {editing?.status === "published" ? "Save & keep live" : "Publish"}
             </Button>
-            {step < 4 ? (
-              <Button variant="hero" onClick={() => setStep(step + 1)}>Next</Button>
-            ) : (
-              <Button variant="hero" onClick={saveEvent} disabled={isSubmitting}>
-                {isSubmitting ? 'Saving...' : editingEvent ? 'Update Event' : 'Create Event'}
-              </Button>
-            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

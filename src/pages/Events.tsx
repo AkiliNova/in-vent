@@ -2,8 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { collectionGroup, getDocs, orderBy, query } from "firebase/firestore";
-import { db } from "@/firebase/firebase";
+import { fetchPublicEvents } from "@/lib/api";
 import Navigation from "@/components/Navigation";
 import EventImg from "@/components/EventImg";
 
@@ -38,31 +37,8 @@ export default function EventsPage() {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const q = query(collectionGroup(db, "events"), orderBy("startDate", "asc"));
-        const snapshot = await getDocs(q);
-
-        const data: Event[] = snapshot.docs
-          .filter(doc => {
-            const e = doc.data();
-            // Only show published events (or events with no status field — legacy)
-            return !e.status || e.status === 'published';
-          })
-          .map(doc => {
-            const e = doc.data();
-            return {
-              id: doc.id,
-              title: e.title,
-              price: e.price,
-              image: e.images?.[0] || "",
-              startDate: e.startDate,
-              location: e.location || "Unknown",
-              city: e.city || "",
-              eventType: e.eventType || "",
-              link: `/events/${e.tenantId}/${doc.id}`,
-            };
-          });
-
-        setEvents(data);
+        const data = await fetchPublicEvents({ per_page: "100" });
+        setEvents(data.map(e => ({ ...e, location: e.location || "Unknown" })));
       } catch (err) {
         console.error("Error loading events", err);
       } finally {
