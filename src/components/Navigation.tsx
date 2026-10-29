@@ -45,9 +45,13 @@ const Navigation = () => {
     { href: '/events',       label: 'Events',    icon: House },
     { href: '/scanner',      label: 'Scanner',   icon: ScanLine },
     { href: '/guests',       label: 'Guests',    icon: Users },
+    { href: '/promo-codes',  label: 'Promos',    icon: Tag },
     { href: '/payouts',      label: 'Wallet',    icon: Wallet },
     { href: '/settings',     label: 'Business',  icon: Settings },
-    ...(isSuperAdmin ? [{ href: '/admin/payouts', label: 'Payouts', icon: ShieldCheck }] : []),
+    ...(isSuperAdmin ? [
+      { href: '/admin/payouts', label: 'Payouts', icon: ShieldCheck },
+      { href: '/admin/blog',    label: 'Blog',    icon: BookOpen },
+    ] : []),
   ];
 
   const publicExtraLinks = [{ href: '/my-tickets', label: 'My Tickets', icon: Ticket }];

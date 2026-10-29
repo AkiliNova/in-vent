@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
-import { CalendarDays, MapPin, Minus, Plus, Loader2, Smartphone, CheckCircle2, Hash, AlertCircle } from "lucide-react";
+import {
+  CalendarDays, MapPin, Minus, Plus, Loader2, Smartphone, CheckCircle2, Hash, AlertCircle,
+  Share2, Link2, CalendarPlus, Tag, Timer, MessageCircle,
+} from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "@/hooks/use-toast";
 import { api, errorMessage, kes, EventItem, TicketTier } from "@/lib/api";
+import { downloadIcs, eventUrl, googleCalendarUrl, shareText, startsIn, whatsappUrl, xUrl } from "@/lib/share";
 
 interface Order {
   reference: string;
@@ -23,6 +28,21 @@ interface OrderStatus {
 
 const remaining = (t: TicketTier) => Math.max(0, t.capacity - t.sold - (t.reserved || 0));
 
+/** Early-bird style windows: not yet on sale / sales ending soon. */
+const salesNote = (t: TicketTier): { open: boolean; note: string | null } => {
+  const now = Date.now();
+  if (t.sales_start_at && new Date(t.sales_start_at).getTime() > now) {
+    return { open: false, note: `On sale ${new Date(t.sales_start_at).toLocaleString("en-KE", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` };
+  }
+  if (t.sales_end_at) {
+    const end = new Date(t.sales_end_at).getTime();
+    if (end <= now) return { open: false, note: "Sales ended" };
+    const left = startsIn(t.sales_end_at);
+    if (end - now < 7 * 86400_000) return { open: true, note: `Ends ${left}` };
+  }
+  return { open: true, note: null };
+};
+
 export default function PublicEvent() {
   const { uuid, eventId } = useParams();
   const id = uuid || eventId;
@@ -36,6 +56,11 @@ export default function PublicEvent() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stkSent, setStkSent] = useState(false);
+  const [params] = useSearchParams();
+  // ?promo=CODE links from organisers pre-fill and apply the code.
+  const [promoInput, setPromoInput] = useState(params.get("promo") || "");
+  const [promo, setPromo] = useState<{ code: string; discount: number } | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
   const poller = useRef<number>();
 
   useEffect(() => {
@@ -55,6 +80,37 @@ export default function PublicEvent() {
 
   const bump = (t: TicketTier, d: number) =>
     setQty((q) => ({ ...q, [t.id]: Math.max(0, Math.min((q[t.id] || 0) + d, remaining(t), t.max_per_order || 10)) }));
+
+  // The discount depends on the basket, so re-check whenever it changes.
+  useEffect(() => {
+    if (promo && total > 0) applyPromo(promo.code);
+    if (total === 0) setPromo(null);
+  }, [total]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const applyPromo = async (code = promoInput) => {
+    if (!code.trim() || total <= 0) return;
+    setPromoError(null);
+    try {
+      const r = await api.post<{ discount: number }>(`public/events/${id}/promo-check`, {
+        code: code.trim(), amount: total, email: buyer.email || undefined,
+      });
+      setPromo({ code: code.trim().toUpperCase(), discount: Number(r.discount) });
+    } catch (err) {
+      setPromo(null);
+      setPromoError(errorMessage(err));
+    }
+  };
+
+  const payable = Math.max(0, total - (promo?.discount || 0));
+
+  const share = async () => {
+    if (!event) return;
+    if (navigator.share) {
+      try { await navigator.share({ title: event.title, text: shareText(event), url: eventUrl(event) }); return; } catch { /* dismissed */ }
+    }
+    navigator.clipboard.writeText(eventUrl(event));
+    toast({ title: "Link copied" });
+  };
 
   const startPolling = (reference: string) => {
     window.clearInterval(poller.current);
@@ -78,6 +134,7 @@ export default function PublicEvent() {
       const o = await api.post<Order>(`public/events/${id}/orders`, {
         items: Object.entries(qty).filter(([, n]) => n > 0).map(([tid, n]) => ({ ticket_tier_id: Number(tid), quantity: n })),
         buyer,
+        promo_code: promo?.code,
       });
       setOrder(o);
       if (o.status === "paid") {
@@ -100,7 +157,7 @@ export default function PublicEvent() {
       await api.post(`public/orders/${o.reference}/pay/mpesa`, { phone });
       setStkSent(true);
     } catch (err) {
-      setError(`${errorMessage(err)} You can still pay with the paybill below.`);
+      setError(o.paybill ? `${errorMessage(err)} You can still pay with the paybill below.` : `${errorMessage(err)} Check the number and press Send again.`);
     }
   };
 
@@ -142,6 +199,30 @@ export default function PublicEvent() {
                 </span>
               )}
               {event.host && <span className="text-sm">Hosted by {event.host}</span>}
+              {startsIn(event.start_date) && (
+                <span className="flex items-center gap-2 text-sm text-primary"><Timer className="w-4 h-4" /> Starts {startsIn(event.start_date)}</span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" asChild className="bg-[#25D366] hover:bg-[#1ebe5a] text-black">
+                <a href={whatsappUrl(event)} target="_blank" rel="noreferrer"><MessageCircle className="w-4 h-4 mr-1.5" /> Share on WhatsApp</a>
+              </Button>
+              <Button size="sm" variant="secondary" onClick={share}><Share2 className="w-4 h-4 mr-1.5" /> Share</Button>
+              <Button size="sm" variant="secondary" onClick={() => { navigator.clipboard.writeText(eventUrl(event)); toast({ title: "Link copied" }); }}>
+                <Link2 className="w-4 h-4 mr-1.5" /> Copy link
+              </Button>
+              <Button size="sm" variant="ghost" asChild>
+                <a href={xUrl(event)} target="_blank" rel="noreferrer" aria-label="Share on X">𝕏</a>
+              </Button>
+              {startsIn(event.start_date) && (
+                <>
+                  <Button size="sm" variant="ghost" asChild>
+                    <a href={googleCalendarUrl(event)} target="_blank" rel="noreferrer"><CalendarPlus className="w-4 h-4 mr-1.5" /> Google Calendar</a>
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => downloadIcs(event)}><CalendarPlus className="w-4 h-4 mr-1.5" /> Add to calendar (.ics)</Button>
+                </>
+              )}
             </div>
             {event.description && <p className="text-foreground/90 whitespace-pre-line leading-relaxed">{event.description}</p>}
           </section>
@@ -210,18 +291,26 @@ export default function PublicEvent() {
                   <h2 className="font-semibold text-foreground">Tickets</h2>
                   {tiers.map((t) => {
                     const left = remaining(t);
+                    const sale = salesNote(t);
+                    const buyable = sale.open && left > 0;
                     return (
-                      <div key={t.id} className="flex items-center justify-between gap-3">
+                      <div key={t.id} className={`flex items-center justify-between gap-3 ${buyable ? "" : "opacity-60"}`}>
                         <div className="min-w-0">
                           <div className="font-medium text-foreground">{t.name}</div>
                           <div className="text-sm text-muted-foreground">
                             {Number(t.price) > 0 ? kes(t.price) : "Free"}{left === 0 ? " · Sold out" : left < 20 ? ` · ${left} left` : ""}
                           </div>
+                          {sale.note && (
+                            <div className={`text-xs mt-0.5 flex items-center gap-1 ${sale.open ? "text-yellow-500" : "text-muted-foreground"}`}>
+                              <Timer className="w-3 h-3" /> {sale.note}
+                            </div>
+                          )}
+                          {t.description && <div className="text-xs text-muted-foreground mt-0.5">{t.description}</div>}
                         </div>
                         <div className="flex items-center gap-2">
                           <Button type="button" size="icon" variant="secondary" className="h-8 w-8" onClick={() => bump(t, -1)} aria-label={`Fewer ${t.name}`}><Minus className="w-3.5 h-3.5" /></Button>
                           <span className="w-6 text-center tabular-nums">{qty[t.id] || 0}</span>
-                          <Button type="button" size="icon" variant="secondary" className="h-8 w-8" disabled={left === 0} onClick={() => bump(t, 1)} aria-label={`More ${t.name}`}><Plus className="w-3.5 h-3.5" /></Button>
+                          <Button type="button" size="icon" variant="secondary" className="h-8 w-8" disabled={!buyable} onClick={() => bump(t, 1)} aria-label={`More ${t.name}`}><Plus className="w-3.5 h-3.5" /></Button>
                         </div>
                       </div>
                     );
@@ -237,13 +326,35 @@ export default function PublicEvent() {
                         <div className="space-y-1.5"><Label htmlFor="bp">M-Pesa number</Label>
                           <Input id="bp" type="tel" required autoComplete="tel" placeholder="0712 345 678" value={buyer.phone} onChange={(e) => setBuyer((b) => ({ ...b, phone: e.target.value }))} /></div>
                       )}
+                      {total > 0 && (
+                        <div className="space-y-1.5">
+                          <Label htmlFor="promo">Promo code</Label>
+                          <div className="flex gap-2">
+                            <Input id="promo" className="uppercase font-mono" value={promoInput}
+                              onChange={(e) => { setPromoInput(e.target.value); setPromoError(null); }}
+                              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyPromo(); } }} />
+                            <Button type="button" variant="secondary" disabled={!promoInput.trim()} onClick={() => applyPromo()}>
+                              <Tag className="w-3.5 h-3.5 mr-1" /> Apply
+                            </Button>
+                          </div>
+                          {promo && <p className="text-xs text-success">{promo.code}: −{kes(promo.discount)}</p>}
+                          {promoError && <p className="text-xs text-destructive">{promoError}</p>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {promo && total > 0 && (
+                    <div className="text-sm flex justify-between text-muted-foreground">
+                      <span>Subtotal {kes(total)} · Discount −{kes(promo.discount)}</span>
+                      <span className="text-foreground font-semibold">{kes(payable)}</span>
                     </div>
                   )}
 
                   {error && <p className="text-sm text-destructive">{error}</p>}
 
                   <Button type="submit" className="w-full" disabled={busy || count === 0}>
-                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : total > 0 ? `Pay ${kes(total)} with M-Pesa` : count > 0 ? "Get free tickets" : "Choose tickets"}
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : total > 0 ? (payable > 0 ? `Pay ${kes(payable)} with M-Pesa` : "Get tickets") : count > 0 ? "Get free tickets" : "Choose tickets"}
                   </Button>
                 </form>
               )}

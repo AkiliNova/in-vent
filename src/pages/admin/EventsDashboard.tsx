@@ -21,6 +21,7 @@ interface TierDraft {
   capacity: string;
   description: string;
   sold?: number;
+  sales_end_at: string;
 }
 
 const emptyForm = {
@@ -28,7 +29,7 @@ const emptyForm = {
   start_date: "", end_date: "", location_name: "", city: "", location_map_link: "",
 };
 
-const newTier = (): TierDraft => ({ name: "General Admission", price: "0", capacity: "100", description: "" });
+const newTier = (): TierDraft => ({ name: "General Admission", price: "0", capacity: "100", description: "", sales_end_at: "" });
 
 /** "2026-10-29T18:00:00.000000Z" → value for <input type="datetime-local"> in local time. */
 const toLocalInput = (iso?: string | null) => {
@@ -94,7 +95,7 @@ const EventsDashboard = () => {
       });
       setTiers((full.ticket_tiers || []).map((t: TicketTier) => ({
         id: t.id, uuid: t.uuid, name: t.name, price: String(Number(t.price)), capacity: String(t.capacity),
-        description: t.description || "", sold: t.sold,
+        description: t.description || "", sold: t.sold, sales_end_at: toLocalInput(t.sales_end_at),
       })));
       setRemovedTierIds([]);
       setCover(null);
@@ -134,6 +135,8 @@ const EventsDashboard = () => {
         const tierBody = {
           name: t.name, description: t.description || null,
           price: Number(t.price) || 0, capacity: Number(t.capacity) || 0, is_active: true,
+          // Early bird: the tier closes itself at this time.
+          sales_end_at: t.sales_end_at ? new Date(t.sales_end_at).toISOString() : null,
         };
         if (t.uuid) await api.put(`events/${event.uuid}/tiers/${t.uuid}`, tierBody);
         else await api.post(`events/${event.uuid}/tiers`, tierBody);
@@ -326,6 +329,15 @@ const EventsDashboard = () => {
                       value={t.price} onChange={(e) => setTier(i, "price", e.target.value)} aria-label="Price in KES" />
                     <Input className="col-span-3 sm:col-span-1" type="number" min={0} placeholder="Qty"
                       value={t.capacity} onChange={(e) => setTier(i, "capacity", e.target.value)} aria-label="Quantity available" />
+                  </div>
+                  <div className="grid grid-cols-6 gap-2">
+                    <Input className="col-span-6 sm:col-span-3" placeholder="What's included (optional)" value={t.description}
+                      onChange={(e) => setTier(i, "description", e.target.value)} aria-label="Ticket description" />
+                    <label className="col-span-6 sm:col-span-3 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="whitespace-nowrap">Sales end</span>
+                      <Input type="datetime-local" value={t.sales_end_at} onChange={(e) => setTier(i, "sales_end_at", e.target.value)}
+                        aria-label="Sales end (for early-bird pricing)" />
+                    </label>
                   </div>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>

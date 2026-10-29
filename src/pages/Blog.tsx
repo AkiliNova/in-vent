@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { db } from '@/firebase/firebase';
+import { api } from '@/lib/api';
+
+interface ApiPost {
+  slug: string; title: string; excerpt?: string; category?: string;
+  cover_url?: string; author?: string; published_at?: string; read_minutes?: number;
+}
 import { Link } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
 import Footer from '@/components/Footer';
@@ -35,28 +39,19 @@ export default function BlogPage() {
   useEffect(() => {
     const fetch = async () => {
       try {
-        const q = query(
-          collection(db, 'blog_posts'),
-          orderBy('createdAt', 'desc')
-        );
-        const snap = await getDocs(q);
-        const data = snap.docs.filter(d => d.data().published === true).map(d => {
-          const p = d.data();
-          const wordCount = (p.content || '').split(/\s+/).length;
-          return {
-            id: d.id,
-            title: p.title,
-            excerpt: p.excerpt || '',
-            category: p.category || 'General',
-            image: p.image || '',
-            author: p.author || 'Tikooh Team',
-            createdAt: p.createdAt?.toDate?.()?.toLocaleDateString('en-KE', {
-              day: 'numeric', month: 'short', year: 'numeric',
-            }) || '',
-            readTime: `${Math.max(1, Math.ceil(wordCount / 200))} min read`,
-          };
-        });
-        setPosts(data);
+        const res = await api.get<{ data: ApiPost[] }>('public/blog?per_page=50');
+        setPosts(res.data.map(p => ({
+          id: p.slug,
+          title: p.title,
+          excerpt: p.excerpt || '',
+          category: p.category || 'General',
+          image: p.cover_url || '',
+          author: p.author || 'Tikooh Team',
+          createdAt: p.published_at ? new Date(p.published_at).toLocaleDateString('en-KE', {
+            day: 'numeric', month: 'short', year: 'numeric',
+          }) : '',
+          readTime: `${p.read_minutes ?? 1} min read`,
+        })));
       } catch (err) {
         console.error('Error loading blog posts', err);
       } finally {

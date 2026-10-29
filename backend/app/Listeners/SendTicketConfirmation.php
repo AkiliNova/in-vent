@@ -41,11 +41,13 @@ class SendTicketConfirmation implements ShouldQueue
             try {
                 (new AdvantaSmsClient($order->tenant_id))->send(
                     [$phone],
+                    // The link opens the QR codes — most buyers never open the email.
                     sprintf(
-                        'Your %s ticket is confirmed. Ref %s. Show this code at the gate: %s',
-                        $order->event->title,
-                        $order->reference,
-                        $event->tickets->first()?->code ?? $order->reference
+                        'Tikooh: %d ticket(s) for %s confirmed. Show the QR at the gate: %s/payment-response?reference=%s',
+                        $event->tickets->count(),
+                        \Illuminate\Support\Str::limit($order->event->title, 40),
+                        rtrim((string) config('app.frontend_url'), '/'),
+                        $order->reference
                     )
                 );
             } catch (\Throwable $e) {

@@ -123,6 +123,8 @@ export interface TicketTier {
   is_hidden?: boolean;
   max_per_order?: number;
   min_per_order?: number;
+  sales_start_at?: string | null;
+  sales_end_at?: string | null;
 }
 
 export interface EventItem {

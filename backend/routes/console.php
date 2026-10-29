@@ -342,3 +342,71 @@ Artisan::command('tikooh:generate-covers {--all : every imageless event, not jus
         $this->info("Generated {$events->count()} cover(s).");
     });
 })->purpose('Generate branded covers for events without an image');
+
+/*
+ * Imports published posts from the old Firestore `blog_posts` collection.
+ * Re-runnable on legacy_id; never overwrites a post already imported.
+ */
+Artisan::command('tikooh:import-legacy-blog {--project=in-vent-app} {--file=} {--apply}', function () {
+    if ($file = $this->option('file')) {
+        $rows = json_decode((string) file_get_contents($file), true);
+    } else {
+        $res = \Illuminate\Support\Facades\Http::timeout(30)->post(
+            'https://firestore.googleapis.com/v1/projects/'.$this->option('project').'/databases/(default)/documents:runQuery',
+            ['structuredQuery' => [
+                'from' => [['collectionId' => 'blog_posts']],
+                'where' => ['fieldFilter' => ['field' => ['fieldPath' => 'published'], 'op' => 'EQUAL', 'value' => ['booleanValue' => true]]],
+                'limit' => 500,
+            ]]
+        );
+
+        if (! $res->successful()) {
+            $this->error("Firestore answered HTTP {$res->status()}. Fetch it elsewhere and pass --file.");
+
+            return 1;
+        }
+
+        $rows = $res->json();
+    }
+
+    $count = 0;
+
+    foreach ($rows ?? [] as $row) {
+        if (empty($row['document'])) {
+            continue;
+        }
+
+        $id = basename($row['document']['name']);
+        $f = collect($row['document']['fields'] ?? [])->map(fn ($v) => $v['stringValue'] ?? $v['timestampValue'] ?? $v['booleanValue'] ?? null);
+
+        if (! $f['title'] || ! $f['content'] || \App\Models\BlogPost::withTrashed()->where('legacy_id', $id)->exists()) {
+            continue;
+        }
+
+        $count++;
+        $this->line(($this->option('apply') ? 'save  ' : 'would ').$f['title']);
+
+        if (! $this->option('apply')) {
+            continue;
+        }
+
+        $slug = \Illuminate\Support\Str::slug($f['title']);
+        while (\App\Models\BlogPost::withTrashed()->where('slug', $slug)->exists()) {
+            $slug .= '-'.\Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(3));
+        }
+
+        \App\Models\BlogPost::create([
+            'legacy_id' => $id,
+            'title' => $f['title'],
+            'slug' => $slug,
+            'excerpt' => $f['excerpt'],
+            'body' => $f['content'],
+            'cover_image_path' => $f['image'] ?: null,
+            'tags' => $f['category'] ? [$f['category']] : [],
+            'published' => true,
+            'published_at' => $f['createdAt'] ? \Illuminate\Support\Carbon::parse($f['createdAt'])->utc() : now(),
+        ]);
+    }
+
+    $this->info(($this->option('apply') ? 'Imported ' : 'Would import ')."{$count} post(s).");
+})->purpose('Import published blog posts from the old Firestore project');

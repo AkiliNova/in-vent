@@ -22,9 +22,13 @@ import Payouts from "./pages/Payouts";
 import BusinessSettings from "./pages/BusinessSettings";
 import Help from "./pages/Help";
 import AdminPayouts from "./pages/admin/AdminPayouts";
+import Blog from "./pages/Blog";
+import BlogPost from "./pages/BlogPost";
+import BlogManager from "./pages/admin/BlogManager";
+import PromoCodes from "./pages/PromoCodes";
 
-// Not yet moved off Firebase, so not routed: Campaigns, PromoCodes, Rooms,
-// RegistrationFields, Registration, Blog/BlogManager, AgendaManager, SuperAdmin.
+// Not yet moved off Firebase, so not routed: Campaigns, Rooms,
+// RegistrationFields, Registration, AgendaManager, SuperAdmin.
 // The API already has endpoints for most of them.
 
 const queryClient = new QueryClient();
@@ -46,6 +50,8 @@ const App = () => (
           <Route path="/payment-response" element={<PaymentResponsePage />} />
           <Route path="/my-tickets" element={<MyTickets />} />
           <Route path="/help" element={<Help />} />
+          <Route path="/blog" element={<Blog />} />
+          <Route path="/blog/:postId" element={<BlogPost />} />
           <Route path="/onboarding" element={<OrganizerOnboarding />} />
           <Route path="/admin/login" element={<AdminLogin />} />
 
@@ -57,7 +63,9 @@ const App = () => (
           <Route path="/payouts" element={<P><Payouts /></P>} />
           <Route path="/wallet" element={<P><Payouts /></P>} />
           <Route path="/settings" element={<P><BusinessSettings /></P>} />
+          <Route path="/promo-codes" element={<P><PromoCodes /></P>} />
           <Route path="/admin/payouts" element={<P><AdminPayouts /></P>} />
+          <Route path="/admin/blog" element={<P><BlogManager /></P>} />
 
           <Route path="*" element={<NotFound />} />
         </Routes>

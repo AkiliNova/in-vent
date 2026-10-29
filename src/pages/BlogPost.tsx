@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/firebase/firebase';
+import { api } from '@/lib/api';
 import Navigation from '@/components/Navigation';
 import Footer from '@/components/Footer';
 import { Calendar, Clock, ArrowLeft, Tag } from 'lucide-react';
@@ -39,22 +38,22 @@ export default function BlogPost() {
     if (!postId) return;
     const fetch = async () => {
       try {
-        const snap = await getDoc(doc(db, 'blog_posts', postId));
-        if (!snap.exists()) { setNotFound(true); return; }
-        const d = snap.data();
-        const wordCount = (d.content || '').split(/\s+/).length;
+        const { post: d } = await api.get<{ post: {
+          slug: string; title: string; excerpt?: string; body: string; category?: string;
+          cover_url?: string; author?: string; published_at?: string; read_minutes?: number;
+        } }>(`public/blog/${encodeURIComponent(postId)}`);
         setPost({
-          id: snap.id,
+          id: d.slug,
           title: d.title,
-          excerpt: d.excerpt,
-          content: d.content,
+          excerpt: d.excerpt || '',
+          content: d.body,
           category: d.category || 'General',
-          image: d.image || '',
+          image: d.cover_url || '',
           author: d.author || 'Tikooh Team',
-          createdAt: d.createdAt?.toDate?.()?.toLocaleDateString('en-KE', {
+          createdAt: d.published_at ? new Date(d.published_at).toLocaleDateString('en-KE', {
             day: 'numeric', month: 'long', year: 'numeric',
-          }) || '',
-          readTime: `${Math.max(1, Math.ceil(wordCount / 200))} min read`,
+          }) : '',
+          readTime: `${d.read_minutes ?? 1} min read`,
         });
       } catch (err) {
         console.error(err);

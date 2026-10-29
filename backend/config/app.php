@@ -54,6 +54,9 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // Where buyers land: payment returns, ticket links in SMS and email.
+    'frontend_url' => env('FRONTEND_URL', 'https://www.tikooh.com'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

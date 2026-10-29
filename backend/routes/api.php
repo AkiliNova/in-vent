@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AgendaController;
 use App\Http\Controllers\Api\AttendeeController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BadgeController;
+use App\Http\Controllers\Api\BlogController;
 use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\ChatbotController;
 use App\Http\Controllers\Api\CheckInController;
@@ -67,6 +68,10 @@ Route::prefix('public')->group(function () {
     Route::post('chat/messages/{message}/rate', [ChatbotController::class, 'rate']);
 
     Route::post('unsubscribe', [CampaignController::class, 'unsubscribe'])->middleware('throttle:10,1');
+
+    // Blog
+    Route::get('blog', [BlogController::class, 'publicIndex']);
+    Route::get('blog/{slug}', [BlogController::class, 'publicShow']);
 });
 
 /*
@@ -285,6 +290,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('payments/unmatched', [WalletController::class, 'unmatchedC2b']);
         Route::get('payouts/pending', [WalletController::class, 'pendingPayouts']);
         Route::get('payouts', [WalletController::class, 'adminPayouts']);
+
+        Route::get('blog', [BlogController::class, 'index']);
+        Route::post('blog', [BlogController::class, 'store']);
+        Route::put('blog/{post:id}', [BlogController::class, 'update']);
+        Route::post('blog/{post:id}/cover', [BlogController::class, 'uploadCover']);
+        Route::delete('blog/{post:id}', [BlogController::class, 'destroy']);
         Route::post('payouts/{payout}/approve', [WalletController::class, 'approve']);
         Route::post('payouts/{payout}/mark-paid', [WalletController::class, 'markPaid']);
         Route::post('payouts/{payout}/reject', [WalletController::class, 'reject']);
