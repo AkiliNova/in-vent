@@ -237,7 +237,8 @@ Artisan::command('tikooh:import-legacy-events {--project=in-vent-app} {--file= :
                 continue;
             }
 
-            $start = \Illuminate\Support\Carbon::parse($f['startDate'], 'Africa/Nairobi');
+            // Firestore held Nairobi wall-clock times; the app stores UTC.
+            $start = \Illuminate\Support\Carbon::parse($f['startDate'], 'Africa/Nairobi')->utc();
             $this->line(($apply ? 'save  ' : 'would ').$start->toDateString().'  '.$f['title']);
             $count++;
 
@@ -265,7 +266,7 @@ Artisan::command('tikooh:import-legacy-events {--project=in-vent-app} {--file= :
                 'host' => $f['host'] ?? null,
                 'event_type' => $f['eventType'] ?? null,
                 'start_date' => $start,
-                'end_date' => ! empty($f['endDate']) ? \Illuminate\Support\Carbon::parse($f['endDate'], 'Africa/Nairobi') : null,
+                'end_date' => ! empty($f['endDate']) ? \Illuminate\Support\Carbon::parse($f['endDate'], 'Africa/Nairobi')->utc() : null,
                 'location_name' => $f['locationName'] ?? ($f['location'] ?? null),
                 'city' => $f['city'] ?? null,
                 'location_map_link' => filter_var($f['locationMapLink'] ?? '', FILTER_VALIDATE_URL) ?: null,
@@ -325,8 +326,15 @@ Artisan::command('tikooh:generate-covers {--all : every imageless event, not jus
             ->get();
 
         foreach ($events as $event) {
-            $path = "events/covers/{$event->uuid}.svg";
-            \Illuminate\Support\Facades\Storage::disk('public')->put($path, \App\Support\EventCover::svg($event));
+            // Content hash in the name: /storage is cached for 30 days, so a
+            // regenerated cover must get a new URL.
+            $svg = \App\Support\EventCover::svg($event);
+            $path = "events/covers/{$event->uuid}-".substr(md5($svg), 0, 8).'.svg';
+            $disk = \Illuminate\Support\Facades\Storage::disk('public');
+            $disk->put($path, $svg);
+            if ($event->cover_image_path && $event->cover_image_path !== $path && str_starts_with($event->cover_image_path, 'events/covers/')) {
+                $disk->delete($event->cover_image_path);
+            }
             $event->update(['cover_image_path' => $path]);
             $this->line("cover  {$event->title}");
         }
