@@ -122,8 +122,10 @@ export default function PublicEvent() {
       <Navigation />
       <main className="pt-20 pb-16">
         {event.cover_url && (
-          <div className="w-full h-56 md:h-80 overflow-hidden">
-            <img src={event.cover_url} alt="" className="w-full h-full object-cover" />
+          // Generated covers carry the title as text, so show them whole
+          // rather than cropping like a photo.
+          <div className={`w-full overflow-hidden ${event.cover_url.endsWith(".svg") ? "bg-[#0b1020] h-56 md:h-[420px]" : "h-56 md:h-80"}`}>
+            <img src={event.cover_url} alt="" className={`w-full h-full ${event.cover_url.endsWith(".svg") ? "object-contain" : "object-cover"}`} />
           </div>
         )}
         <div className="container mx-auto px-4 max-w-5xl grid md:grid-cols-5 gap-8 mt-8">

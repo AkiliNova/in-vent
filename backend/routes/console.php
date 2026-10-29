@@ -260,7 +260,8 @@ Artisan::command('tikooh:import-legacy-events {--project=in-vent-app} {--file= :
                 'tenant_id' => $tenant->id,
                 'title' => $f['title'],
                 'slug' => $event->slug ?: \Illuminate\Support\Str::slug($f['title']).'-'.strtolower(substr($legacyEvent, 0, 6)),
-                'description' => $f['description'] ?? null,
+                // Kept once imported, so manual clean-ups survive a re-run.
+                'description' => $event->exists ? $event->description : ($f['description'] ?? null),
                 'host' => $f['host'] ?? null,
                 'event_type' => $f['eventType'] ?? null,
                 'start_date' => $start,
@@ -310,3 +311,26 @@ Artisan::command('tikooh:import-legacy-events {--project=in-vent-app} {--file= :
 
     $this->info(($apply ? 'Imported ' : 'Would import ')."{$count} event(s).".($apply ? '' : ' Re-run with --apply.'));
 })->purpose('Import past events from the old Firestore project');
+
+/*
+ * Gives imageless events (by default only imported legacy ones) a generated
+ * cover with their own title, date and venue. --force regenerates.
+ */
+Artisan::command('tikooh:generate-covers {--all : every imageless event, not just legacy ones} {--force}', function () {
+    \App\Support\TenantContext::withoutScoping(function () {
+        $events = \App\Models\Event::query()
+            ->when(! $this->option('all'), fn ($q) => $q->whereNotNull('legacy_id'))
+            ->when(! $this->option('force'), fn ($q) => $q->whereNull('cover_image_path'))
+            ->when($this->option('force'), fn ($q) => $q->where(fn ($w) => $w->whereNull('cover_image_path')->orWhere('cover_image_path', 'like', 'events/covers/%')))
+            ->get();
+
+        foreach ($events as $event) {
+            $path = "events/covers/{$event->uuid}.svg";
+            \Illuminate\Support\Facades\Storage::disk('public')->put($path, \App\Support\EventCover::svg($event));
+            $event->update(['cover_image_path' => $path]);
+            $this->line("cover  {$event->title}");
+        }
+
+        $this->info("Generated {$events->count()} cover(s).");
+    });
+})->purpose('Generate branded covers for events without an image');

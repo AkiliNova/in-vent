@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 
-// Generic event poster placeholder — royalty-free Unsplash image
-// Colorful stage lights, no specific event/performer
-const PLACEHOLDER = 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&q=80';
+// Tikooh-branded default for events with no image (and broken image links).
+const PLACEHOLDER = '/default-event-cover.svg';
 
 interface Props {
   src?: string;
