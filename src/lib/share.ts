@@ -9,7 +9,12 @@ const range = (e: EventItem) => {
   return { start, end };
 };
 
-const where = (e: EventItem) => [e.location_name, e.city].filter(Boolean).join(", ");
+/** "Venue, City" — without repeating the city when the venue already ends in it. */
+export const where = (e: Pick<EventItem, "location_name" | "city">) => {
+  const venue = (e.location_name || "").trim();
+  const city = (e.city || "").trim();
+  return city && !venue.toLowerCase().endsWith(city.toLowerCase()) ? [venue, city].filter(Boolean).join(", ") : venue || city;
+};
 
 export const eventUrl = (e: EventItem) => `${window.location.origin}/e/${e.uuid}`;
 

@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { api, errorMessage, kes, EventItem, TicketTier } from "@/lib/api";
-import { downloadIcs, eventUrl, googleCalendarUrl, shareText, startsIn, whatsappUrl, xUrl } from "@/lib/share";
+import { downloadIcs, eventUrl, googleCalendarUrl, shareText, startsIn, whatsappUrl, where, xUrl } from "@/lib/share";
 
 interface Order {
   reference: string;
@@ -194,8 +194,8 @@ export default function PublicEvent() {
               {(event.location_name || event.city) && (
                 <span className="flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" />
                   {event.location_map_link
-                    ? <a href={event.location_map_link} target="_blank" rel="noreferrer" className="hover:underline">{[event.location_name, event.city].filter(Boolean).join(", ")}</a>
-                    : [event.location_name, event.city].filter(Boolean).join(", ")}
+                    ? <a href={event.location_map_link} target="_blank" rel="noreferrer" className="hover:underline">{where(event)}</a>
+                    : where(event)}
                 </span>
               )}
               {event.host && <span className="text-sm">Hosted by {event.host}</span>}
