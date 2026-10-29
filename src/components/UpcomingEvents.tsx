@@ -42,8 +42,13 @@ export default function UpcomingEvents() {
       try {
         // Single query — same index that already existed (orderBy startDate asc)
         // Fetch enough to find MAX_EVENTS with images after client-side filtering
-        const all = await fetchPublicEvents();
-        setEvents(all.filter(e => e.image).slice(0, MAX_EVENTS));
+        // Upcoming first, then fill with the most recent past events.
+        const [upcoming, past] = await Promise.all([
+          fetchPublicEvents(),
+          fetchPublicEvents({ when: "past", per_page: String(MAX_EVENTS) }),
+        ]);
+        // EventImg falls back to a placeholder, so imageless events still show.
+        setEvents([...upcoming, ...past].slice(0, MAX_EVENTS));
       } catch (error) {
         console.error("Error loading upcoming events", error);
       } finally {

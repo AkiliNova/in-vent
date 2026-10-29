@@ -195,6 +195,12 @@ export default function PublicEvent() {
                   )}
                   {error && <p className="text-sm text-destructive">{error}</p>}
                 </div>
+              ) : new Date(event.end_date || event.start_date) < new Date() ? (
+                <div className="space-y-3">
+                  <p className="font-semibold text-foreground">This event has ended</p>
+                  <p className="text-sm text-muted-foreground">Ticketed on Tikooh. Find what's coming up next.</p>
+                  <Button asChild variant="secondary" className="w-full"><Link to="/search-events">Browse upcoming events</Link></Button>
+                </div>
               ) : tiers.length === 0 ? (
                 <p className="text-muted-foreground text-sm">Tickets aren't on sale yet.</p>
               ) : (

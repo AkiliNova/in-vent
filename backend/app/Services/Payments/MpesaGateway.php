@@ -8,6 +8,7 @@ use App\Services\Sms\AdvantaSmsClient;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 /** Safaricom Daraja STK push, ported from php/mpesa/. */
@@ -235,25 +236,32 @@ class MpesaGateway
      * Records that Safaricom rejected the initiator. Their support is explicit
      * that retrying with a wrong password re-locks the operator, so every
      * further payout is refused until someone clears this deliberately.
+     *
+     * Kept in a file, not the cache: deploys run cache:clear, which would
+     * silently lift the lock and let payouts retry into a locked operator.
      */
     public static function lockInitiator(string $code, ?string $description): void
     {
-        Cache::forever('mpesa:b2c:initiator-lock', [
+        Storage::disk('local')->put(self::LOCK_FILE, json_encode([
             'locked_at' => now()->toIso8601String(),
             'result_code' => $code,
             'result_desc' => $description,
-        ]);
+        ]));
     }
 
     public static function initiatorLock(): ?array
     {
-        return Cache::get('mpesa:b2c:initiator-lock');
+        $disk = Storage::disk('local');
+
+        return $disk->exists(self::LOCK_FILE) ? json_decode((string) $disk->get(self::LOCK_FILE), true) : null;
     }
 
     public static function clearInitiatorLock(): void
     {
-        Cache::forget('mpesa:b2c:initiator-lock');
+        Storage::disk('local')->delete(self::LOCK_FILE);
     }
+
+    protected const LOCK_FILE = 'mpesa/initiator_lock.json';
 
     protected function assertInitiatorUsable(): void
     {

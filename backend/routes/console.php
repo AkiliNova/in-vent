@@ -175,3 +175,138 @@ Artisan::command('tikooh:make-admin {email}', function (string $email) {
 
 \Illuminate\Support\Facades\Schedule::command('tikooh:payout-reminders')->everyFifteenMinutes()->withoutOverlapping();
 \Illuminate\Support\Facades\Schedule::command('tikooh:health')->everyFiveMinutes()->withoutOverlapping();
+
+/*
+ * Imports events from the old Firestore project (public read) as Tikooh
+ * events, so the platform's real history shows as past events. Re-runnable:
+ * matches on the Firestore document id kept in `legacy_id`. Drafts skipped.
+ *
+ *   php artisan tikooh:import-legacy-events            # dry run
+ *   php artisan tikooh:import-legacy-events --apply
+ */
+Artisan::command('tikooh:import-legacy-events {--project=in-vent-app} {--file= : runQuery JSON saved elsewhere (Google blocks some server IPs)} {--apply}', function () {
+    if ($file = $this->option('file')) {
+        $rows = json_decode((string) file_get_contents($file), true);
+    } else {
+        $res = \Illuminate\Support\Facades\Http::timeout(30)->post(
+            'https://firestore.googleapis.com/v1/projects/'.$this->option('project').'/databases/(default)/documents:runQuery',
+            ['structuredQuery' => ['from' => [['collectionId' => 'events', 'allDescendants' => true]], 'limit' => 1000]]
+        );
+
+        if (! $res->successful()) {
+            $this->error("Firestore answered HTTP {$res->status()}. Fetch it from another machine and pass --file.");
+
+            return 1;
+        }
+
+        $rows = $res->json();
+    }
+
+    $value = function ($f) use (&$value) {
+        if (! is_array($f)) {
+            return null;
+        }
+        $k = array_key_first($f);
+        $x = $f[$k];
+
+        return match ($k) {
+            'arrayValue' => array_map($value, $x['values'] ?? []),
+            'mapValue' => array_map($value, $x['fields'] ?? []),
+            'integerValue' => (int) $x,
+            'doubleValue' => (float) $x,
+            'nullValue' => null,
+            default => $x,
+        };
+    };
+
+    $apply = (bool) $this->option('apply');
+    $count = 0;
+
+    \App\Support\TenantContext::withoutScoping(function () use ($rows, $value, $apply, &$count) {
+        foreach ($rows ?? [] as $row) {
+            if (empty($row['document'])) {
+                continue;
+            }
+
+            preg_match('#tenants/([^/]+)/events/([^/]+)$#', $row['document']['name'], $m);
+            [, $legacyTenant, $legacyEvent] = $m;
+            $f = array_map($value, $row['document']['fields'] ?? []);
+
+            if (($f['status'] ?? 'draft') !== 'published' || empty($f['title']) || empty($f['startDate'])) {
+                $this->line("skip  {$legacyEvent} ".($f['title'] ?? '').' ('.($f['status'] ?? 'no status').')');
+                continue;
+            }
+
+            $start = \Illuminate\Support\Carbon::parse($f['startDate'], 'Africa/Nairobi');
+            $this->line(($apply ? 'save  ' : 'would ').$start->toDateString().'  '.$f['title']);
+            $count++;
+
+            if (! $apply) {
+                continue;
+            }
+
+            $tenant = \App\Models\Tenant::withTrashed()->firstOrCreate(
+                ['legacy_id' => $legacyTenant],
+                [
+                    'organization_name' => $f['host'] ?? 'Tikooh organiser',
+                    'slug' => 'legacy-'.strtolower(substr($legacyTenant, 0, 10)),
+                    'email' => 'legacy+'.strtolower(substr($legacyTenant, 0, 10)).'@tikooh.com',
+                    'settings' => ['legacy' => true],
+                ]
+            );
+
+            $event = \App\Models\Event::withTrashed()->firstOrNew(['legacy_id' => $legacyEvent]);
+            $event->fill([
+                'tenant_id' => $tenant->id,
+                'title' => $f['title'],
+                'slug' => $event->slug ?: \Illuminate\Support\Str::slug($f['title']).'-'.strtolower(substr($legacyEvent, 0, 6)),
+                'description' => $f['description'] ?? null,
+                'host' => $f['host'] ?? null,
+                'event_type' => $f['eventType'] ?? null,
+                'start_date' => $start,
+                'end_date' => ! empty($f['endDate']) ? \Illuminate\Support\Carbon::parse($f['endDate'], 'Africa/Nairobi') : null,
+                'location_name' => $f['locationName'] ?? ($f['location'] ?? null),
+                'city' => $f['city'] ?? null,
+                'location_map_link' => filter_var($f['locationMapLink'] ?? '', FILTER_VALIDATE_URL) ?: null,
+                'status' => $start->isPast() ? 'ended' : 'published',
+                'is_public' => true,
+                'published_at' => $event->published_at ?? $start,
+            ]);
+
+            // Keep a local copy of the image so history survives the old host.
+            $image = ($f['images'] ?? [])[0] ?? null;
+            if ($image && ! $event->cover_image_path) {
+                try {
+                    $img = \Illuminate\Support\Facades\Http::timeout(20)->get($image);
+                    $ext = str_contains((string) $img->header('Content-Type'), 'png') ? 'png' : 'jpg';
+                    if ($img->successful() && str_starts_with((string) $img->header('Content-Type'), 'image/')) {
+                        $path = "events/legacy/{$legacyEvent}.{$ext}";
+                        \Illuminate\Support\Facades\Storage::disk('public')->put($path, $img->body());
+                        $event->cover_image_path = $path;
+                    } else {
+                        $event->cover_image_path = $image;
+                    }
+                } catch (\Throwable) {
+                    $event->cover_image_path = $image;
+                }
+            }
+
+            $event->save();
+
+            foreach ($f['ticketTiers'] ?? [] as $i => $t) {
+                \App\Models\TicketTier::updateOrCreate(
+                    ['event_id' => $event->id, 'name' => $t['name'] ?? 'General'],
+                    [
+                        'price' => (float) ($t['price'] ?? 0),
+                        'capacity' => (int) ($t['capacity'] ?? 0),
+                        'sold' => (int) ($t['sold'] ?? 0),
+                        'is_active' => false, // history only — never on sale again
+                        'sort_order' => $i,
+                    ]
+                );
+            }
+        }
+    });
+
+    $this->info(($apply ? 'Imported ' : 'Would import ')."{$count} event(s).".($apply ? '' : ' Re-run with --apply.'));
+})->purpose('Import past events from the old Firestore project');

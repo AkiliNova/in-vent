@@ -30,16 +30,22 @@ class EventController extends Controller
     /** Public discovery feed — published, public events across all tenants. */
     public function publicIndex(Request $request): JsonResponse
     {
+        $past = $request->string('when')->toString() === 'past';
+
         $events = TenantContext::withoutScoping(fn () => Event::query()
-            ->publiclyVisible()
-            ->upcoming()
+            ->when(
+                $past,
+                // The platform's track record: anything that was public and has happened.
+                fn ($q) => $q->where('is_public', true)->whereIn('status', ['published', 'live', 'ended'])
+                    ->where('start_date', '<', now())->reorder()->orderByDesc('start_date'),
+                fn ($q) => $q->publiclyVisible()->upcoming()->orderBy('start_date'),
+            )
             ->with('venue:id,name,city', 'ticketTiers:id,event_id,name,price,capacity,sold,is_active')
             ->when($request->string('city')->toString(), fn ($q, $c) => $q->where('city', 'like', "%{$c}%"))
             ->when($request->string('type')->toString(), fn ($q, $t) => $q->where('event_type', $t))
             ->when($request->string('search')->toString(), fn ($q, $s) => $q->where(
                 fn ($w) => $w->where('title', 'like', "%{$s}%")->orWhere('description', 'like', "%{$s}%")
             ))
-            ->orderBy('start_date')
             ->paginate($request->integer('per_page', 12)));
 
         return response()->json($events);
@@ -68,8 +74,10 @@ class EventController extends Controller
     /** Public event page — no auth, so only safe fields are exposed. */
     public function publicShow(string $uuid): JsonResponse
     {
+        // Ended events stay viewable; checkout still requires publiclyVisible.
         $event = TenantContext::withoutScoping(fn () => Event::query()
-            ->publiclyVisible()
+            ->where('is_public', true)
+            ->whereIn('status', ['published', 'live', 'ended'])
             ->with([
                 'venue:id,name,address,city,map_link,latitude,longitude',
                 'images',

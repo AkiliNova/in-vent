@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\MpesaC2bTransaction;
 use App\Models\Order;
+use App\Services\Notify\Telegram;
 use App\Services\OrderService;
 use App\Services\Payments\MpesaGateway;
 use App\Services\WalletService;
@@ -57,7 +58,7 @@ class DarajaCallbackController extends Controller
 
     public function b2cResult(Request $request, string $token): JsonResponse
     {
-        $this->guard($request, $token);
+        $this->guard($request, $token, strictIp: false);
 
         $payload = $request->all();
         Log::info('B2C result', ['payload' => $payload]);
@@ -78,7 +79,7 @@ class DarajaCallbackController extends Controller
      */
     public function b2cTimeout(Request $request, string $token): JsonResponse
     {
-        $this->guard($request, $token);
+        $this->guard($request, $token, strictIp: false);
 
         Log::warning('B2C queue timeout', ['payload' => $request->all()]);
 
@@ -133,7 +134,13 @@ class DarajaCallbackController extends Controller
         });
     }
 
-    protected function guard(Request $request, string $token): void
+    /**
+     * @param  bool  $strictIp  false for B2C results: Safaricom's published IP
+     *                          list is not guaranteed complete, and dropping a
+     *                          real result leaves money sent but unrecorded. The
+     *                          secret token still has to match.
+     */
+    protected function guard(Request $request, string $token, bool $strictIp = true): void
     {
         $expected = (string) config('services.mpesa.c2b_token');
 
@@ -142,7 +149,13 @@ class DarajaCallbackController extends Controller
         if (config('services.mpesa.enforce_callback_ips')
             && ! in_array($request->ip(), config('services.mpesa.callback_ips'), true)) {
             Log::warning('Daraja callback from unexpected address', ['ip' => $request->ip(), 'path' => $request->path()]);
-            abort(403);
+
+            if ($strictIp) {
+                abort(403);
+            }
+
+            Telegram::send('🔎 M-Pesa callback from an unlisted address '.Telegram::e($request->ip())
+                .' — accepted (token valid). Add it to MPESA_CALLBACK_IPS if it is Safaricom.', dedupeKey: 'ip:'.$request->ip(), dedupeMinutes: 1440);
         }
     }
 }

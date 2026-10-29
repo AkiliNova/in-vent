@@ -37,6 +37,9 @@ class WalletTest extends TestCase
     {
         parent::setUp();
 
+        // The B2C lock is a file; keep tests from leaving one behind.
+        \Illuminate\Support\Facades\Storage::fake('local');
+
         config([
             'tikooh.platform_fee_percent' => 10,
             'services.mpesa.c2b_token' => 'secret-token',
@@ -236,6 +239,27 @@ class WalletTest extends TestCase
         $this->assertSame('paid', $payout->fresh()->status);
         $this->assertSame('RKT1234XYZ', $payout->fresh()->mpesa_receipt);
         $this->assertSame(400.0, $this->balance());
+    }
+
+    public function test_b2c_results_from_an_unlisted_address_are_applied_but_need_the_token(): void
+    {
+        $this->fakeB2c();
+        $this->sellOneTicket();
+        $payout = $this->requestPayout(500);
+        $this->approve($payout)->assertOk();
+        $payout->refresh();
+
+        $result = fn (string $token) => $this->withServerVariables(['REMOTE_ADDR' => '41.90.1.1'])
+            ->postJson("/api/webhooks/daraja/b2c/{$token}/result", ['Result' => [
+                'ResultCode' => '0', 'ResultDesc' => 'Success', 'TransactionID' => 'RKT1',
+                'OriginatorConversationID' => $payout->originator_conversation_id, 'ConversationID' => 'AG_1',
+            ]]);
+
+        $result('guess')->assertNotFound();
+        $this->assertSame('processing', $payout->fresh()->status);
+
+        $result('secret-token')->assertOk();
+        $this->assertSame('paid', $payout->fresh()->status);
     }
 
     public function test_a_failed_b2c_result_requeues_without_refunding(): void
