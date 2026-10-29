@@ -22,6 +22,10 @@ class Payout extends Model
             'platform_fee' => 'decimal:2',
             'net_amount' => 'decimal:2',
             'paid_at' => 'datetime',
+            'due_at' => 'datetime',
+            'approved_at' => 'datetime',
+            'reminded_at' => 'datetime',
+            'overdue_notified_at' => 'datetime',
             'raw_result' => 'array',
         ];
     }

@@ -266,6 +266,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('merchant/payout', [MerchantController::class, 'updatePayout'])->middleware('throttle:5,1');
         Route::get('wallet', [WalletController::class, 'show']);
         Route::post('wallet/withdraw', [WalletController::class, 'withdraw'])->middleware('throttle:5,1');
+        Route::post('wallet/withdrawals/{payout}/cancel', [WalletController::class, 'cancel']);
 
         // Campaigns (feature 2)
         Route::get('campaigns', [CampaignController::class, 'index']);
@@ -283,5 +284,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('overview', [DashboardController::class, 'platform']);
         Route::get('payments/unmatched', [WalletController::class, 'unmatchedC2b']);
         Route::get('payouts/pending', [WalletController::class, 'pendingPayouts']);
+        Route::get('payouts', [WalletController::class, 'adminPayouts']);
+        Route::post('payouts/{payout}/approve', [WalletController::class, 'approve']);
+        Route::post('payouts/{payout}/mark-paid', [WalletController::class, 'markPaid']);
+        Route::post('payouts/{payout}/reject', [WalletController::class, 'reject']);
     });
 });

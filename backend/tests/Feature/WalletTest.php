@@ -27,6 +27,8 @@ class WalletTest extends TestCase
 
     protected User $organizer;
 
+    protected User $admin;
+
     protected Event $event;
 
     protected TicketTier $tier;
@@ -46,6 +48,7 @@ class WalletTest extends TestCase
                 'initiator' => 'api', 'initiator_password' => 'pw', 'command_id' => 'BusinessPayment',
                 'certificate' => resource_path('mpesa/ProductionCertificate.cer'),
             ],
+            'services.telegram' => ['bot_token' => 'bot-token', 'chat_id' => '42'],
         ]);
 
         TenantContext::withoutScoping(function () {
@@ -57,6 +60,11 @@ class WalletTest extends TestCase
             $this->organizer = User::create([
                 'tenant_id' => $this->tenant->id, 'name' => 'Owner', 'email' => 'owner@acme.com',
                 'password' => 'password123', 'role' => User::ROLE_ORGANIZER,
+            ]);
+
+            $this->admin = User::create([
+                'name' => 'Ops', 'email' => 'ops@tikooh.com',
+                'password' => 'password123', 'role' => User::ROLE_SUPER_ADMIN,
             ]);
 
             $this->event = Event::create([
@@ -103,6 +111,7 @@ class WalletTest extends TestCase
                 'ConversationID' => 'AG_1', 'OriginatorConversationID' => 'x',
                 'ResponseCode' => '0', 'ResponseDescription' => 'Accept the service request successfully.',
             ]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
         ]);
     }
 
@@ -174,19 +183,52 @@ class WalletTest extends TestCase
         $this->assertSame(0, $this->tier->fresh()->reserved);
     }
 
-    public function test_withdrawal_debits_then_settles_on_a_successful_result(): void
+    protected function sellOneTicket(): void
+    {
+        TenantContext::withoutScoping(fn () => app(OrderService::class)->markPaid($this->order(), 'mpesa', ['receipt' => 'A1']));
+    }
+
+    protected function requestPayout(int $amount = 500): Payout
+    {
+        Sanctum::actingAs($this->organizer);
+        $this->postJson('/api/wallet/withdraw', ['amount' => $amount, 'password' => 'password123'])->assertCreated();
+
+        return Payout::withoutGlobalScope('tenant')->latest('id')->first();
+    }
+
+    protected function approve(Payout $payout)
+    {
+        Sanctum::actingAs($this->admin);
+
+        return $this->postJson("/api/admin/payouts/{$payout->id}/approve");
+    }
+
+    public function test_a_withdrawal_is_a_request_that_holds_the_money_and_alerts_ops(): void
     {
         $this->fakeB2c();
-        TenantContext::withoutScoping(fn () => app(OrderService::class)->markPaid($this->order(), 'mpesa', ['receipt' => 'A1']));
-        Sanctum::actingAs($this->organizer);
+        $this->sellOneTicket();
 
-        $this->postJson('/api/wallet/withdraw', ['amount' => 500, 'password' => 'password123'])
-            ->assertCreated();
+        $this->travelTo(now()->startOfMinute());
+        $payout = $this->requestPayout(500);
 
+        $this->assertSame('requested', $payout->status);
+        $this->assertTrue($payout->due_at->equalTo(now()->addHours(24)));
         $this->assertSame(400.0, $this->balance());
-        $payout = Payout::withoutGlobalScope('tenant')->first();
-        $this->assertSame('processing', $payout->status);
 
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'b2c'));
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'api.telegram.org') && str_contains($r['text'], 'Withdrawal requested'));
+    }
+
+    public function test_admin_approval_sends_b2c_and_a_successful_result_settles_it(): void
+    {
+        $this->fakeB2c();
+        $this->sellOneTicket();
+        $payout = $this->requestPayout(500);
+
+        $this->approve($payout)->assertOk();
+
+        $payout->refresh();
+        $this->assertSame('processing', $payout->status);
         Http::assertSent(fn ($r) => str_contains($r->url(), 'b2c') && $r['PartyB'] === '254712345678' && $r['Amount'] === 500);
 
         $this->b2cResult($payout, '0')->assertOk();
@@ -196,44 +238,132 @@ class WalletTest extends TestCase
         $this->assertSame(400.0, $this->balance());
     }
 
-    public function test_a_failed_b2c_result_refunds_the_wallet_once(): void
+    public function test_a_failed_b2c_result_requeues_without_refunding(): void
     {
         $this->fakeB2c();
-        TenantContext::withoutScoping(fn () => app(OrderService::class)->markPaid($this->order(), 'mpesa', ['receipt' => 'A1']));
-        Sanctum::actingAs($this->organizer);
+        $this->sellOneTicket();
+        $payout = $this->requestPayout(500);
+        $this->approve($payout)->assertOk();
 
-        $this->postJson('/api/wallet/withdraw', ['amount' => 500, 'password' => 'password123'])->assertCreated();
-        $payout = Payout::withoutGlobalScope('tenant')->first();
+        // e.g. the B2C account was not funded yet
+        $this->b2cResult($payout->fresh(), '1')->assertOk();
+        $this->b2cResult($payout->fresh(), '1')->assertOk();
 
-        $this->b2cResult($payout, '1')->assertOk();
-        $this->b2cResult($payout, '1')->assertOk();
+        $this->assertSame('requested', $payout->fresh()->status);
+        $this->assertSame(400.0, $this->balance());
 
-        $this->assertSame('rejected', $payout->fresh()->status);
+        // The admin can try again once funded.
+        $this->approve($payout)->assertOk();
+        $this->assertSame('processing', $payout->fresh()->status);
+    }
+
+    public function test_reject_and_cancel_return_the_money_once(): void
+    {
+        $this->fakeB2c();
+        $this->sellOneTicket();
+
+        $first = $this->requestPayout(300);
+        Sanctum::actingAs($this->admin);
+        $this->postJson("/api/admin/payouts/{$first->id}/reject", ['reason' => 'Name mismatch'])->assertOk();
+        $this->postJson("/api/admin/payouts/{$first->id}/reject", ['reason' => 'again'])->assertStatus(422);
+        $this->assertSame(900.0, $this->balance());
+
+        $second = $this->requestPayout(200);
+        $this->postJson("/api/wallet/withdrawals/{$second->id}/cancel")->assertOk();
+        $this->assertSame('cancelled', $second->fresh()->status);
         $this->assertSame(900.0, $this->balance());
     }
 
-    public function test_a_locked_initiator_pauses_all_further_withdrawals(): void
+    public function test_a_request_already_being_sent_cannot_be_cancelled(): void
     {
         $this->fakeB2c();
-        TenantContext::withoutScoping(fn () => app(OrderService::class)->markPaid($this->order(), 'mpesa', ['receipt' => 'A1']));
+        $this->sellOneTicket();
+        $payout = $this->requestPayout(500);
+        $this->approve($payout)->assertOk();
+
         Sanctum::actingAs($this->organizer);
+        $this->postJson("/api/wallet/withdrawals/{$payout->id}/cancel")->assertStatus(422);
+        $this->assertSame(400.0, $this->balance());
+    }
 
-        $this->postJson('/api/wallet/withdraw', ['amount' => 100, 'password' => 'password123'])->assertCreated();
-        $this->b2cResult(Payout::withoutGlobalScope('tenant')->first(), '8006')->assertOk();
+    public function test_admin_can_record_a_manual_payout(): void
+    {
+        $this->fakeB2c();
+        $this->sellOneTicket();
+        $payout = $this->requestPayout(500);
 
+        Sanctum::actingAs($this->admin);
+        $this->postJson("/api/admin/payouts/{$payout->id}/mark-paid", ['receipt' => 'sk12abc'])->assertOk();
+
+        $payout->refresh();
+        $this->assertSame('paid', $payout->status);
+        $this->assertSame('manual', $payout->payment_method);
+        $this->assertSame('SK12ABC', $payout->mpesa_receipt);
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), 'b2c'));
+    }
+
+    public function test_only_platform_admins_can_approve(): void
+    {
+        $this->fakeB2c();
+        $this->sellOneTicket();
+        $payout = $this->requestPayout(500);
+
+        Sanctum::actingAs($this->organizer);
+        $this->postJson("/api/admin/payouts/{$payout->id}/approve")->assertForbidden();
+        $this->postJson("/api/admin/payouts/{$payout->id}/mark-paid", ['receipt' => 'X'])->assertForbidden();
+
+        $this->assertSame('requested', $payout->fresh()->status);
+    }
+
+    public function test_a_locked_initiator_blocks_further_b2c_sends(): void
+    {
+        $this->fakeB2c();
+        $this->sellOneTicket();
+        $first = $this->requestPayout(100);
+        $second = $this->requestPayout(100);
+
+        $this->approve($first)->assertOk();
+        $this->b2cResult($first->fresh(), '8006')->assertOk();
         $this->assertNotNull(MpesaGateway::initiatorLock());
 
-        $this->postJson('/api/wallet/withdraw', ['amount' => 100, 'password' => 'password123'])
-            ->assertStatus(422);
+        $this->approve($second)->assertStatus(422);
 
-        $this->assertSame(900.0, $this->balance());
-        Http::assertSentCount(2); // token + the first payout only
+        $this->assertSame('requested', $second->fresh()->status);
+        // 2 request alerts, 1 OAuth token, 1 B2C call, then one failure alert
+        // each for the 8006 result and the refused second send. No second B2C.
+        Http::assertSentCount(6);
+        $this->assertCount(1, collect(Http::recorded())->filter(fn ($p) => str_contains($p[0]->url(), 'paymentrequest')));
+    }
+
+    public function test_reminders_fire_once_before_due_and_once_when_overdue(): void
+    {
+        $this->fakeB2c();
+        $this->sellOneTicket();
+        $payout = $this->requestPayout(500);
+
+        $telegram = fn () => collect(Http::recorded())->filter(fn ($pair) => str_contains($pair[0]->url(), 'api.telegram.org'))
+            ->map(fn ($pair) => $pair[0]['text'])->values();
+
+        $this->artisan('tikooh:payout-reminders')->assertSuccessful();
+        $this->assertCount(1, $telegram()); // only the request alert so far
+
+        $this->travelTo($payout->due_at->copy()->subHours(2));
+        $this->artisan('tikooh:payout-reminders')->assertSuccessful();
+        $this->artisan('tikooh:payout-reminders')->assertSuccessful();
+        $this->assertCount(2, $telegram());
+        $this->assertStringContainsString('due soon', $telegram()->last());
+
+        $this->travelTo($payout->due_at->copy()->addMinute());
+        $this->artisan('tikooh:payout-reminders')->assertSuccessful();
+        $this->artisan('tikooh:payout-reminders')->assertSuccessful();
+        $this->assertCount(3, $telegram());
+        $this->assertStringContainsString('OVERDUE', $telegram()->last());
     }
 
     public function test_withdrawal_needs_the_password_and_enough_balance(): void
     {
         $this->fakeB2c();
-        TenantContext::withoutScoping(fn () => app(OrderService::class)->markPaid($this->order(), 'mpesa', ['receipt' => 'A1']));
+        $this->sellOneTicket();
         Sanctum::actingAs($this->organizer);
 
         $this->postJson('/api/wallet/withdraw', ['amount' => 100, 'password' => 'wrong'])

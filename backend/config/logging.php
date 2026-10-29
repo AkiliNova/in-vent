@@ -65,6 +65,13 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Errors to the ops Telegram chat. Server: LOG_STACK=daily,telegram
+        'telegram' => [
+            'driver' => 'monolog',
+            'handler' => App\Logging\TelegramHandler::class,
+            'level' => 'error',
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

@@ -79,6 +79,13 @@ return [
         ],
     ],
 
+    // Ops alerts via a Telegram bot (create one with @BotFather). This is the
+    // Bot API — not the MTProto api_id/api_hash, which log in as a user.
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'chat_id' => env('TELEGRAM_CHAT_ID'),
+    ],
+
     'advanta' => [
         'api_key' => env('ADVANTA_API_KEY'),
         'partner_id' => env('ADVANTA_PARTNER_ID'),

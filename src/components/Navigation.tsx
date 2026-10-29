@@ -47,7 +47,7 @@ const Navigation = () => {
     { href: '/guests',       label: 'Guests',    icon: Users },
     { href: '/payouts',      label: 'Wallet',    icon: Wallet },
     { href: '/settings',     label: 'Business',  icon: Settings },
-    ...(isSuperAdmin ? [{ href: '/super-admin', label: 'Admin', icon: ShieldCheck }] : []),
+    ...(isSuperAdmin ? [{ href: '/admin/payouts', label: 'Payouts', icon: ShieldCheck }] : []),
   ];
 
   const publicExtraLinks = [{ href: '/my-tickets', label: 'My Tickets', icon: Ticket }];

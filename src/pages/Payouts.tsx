@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Wallet, ArrowDownToLine, TrendingUp, Receipt, Clock, Loader2, AlertTriangle, Smartphone } from "lucide-react";
+import { Wallet, ArrowDownToLine, TrendingUp, Receipt, Clock, Loader2, Smartphone } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,18 +17,24 @@ interface WalletData {
   payout_phone: string | null;
   payout_name: string | null;
   min_withdrawal: number;
-  withdrawals_paused: boolean;
+  payout_hours: number;
   entries: { id: number; type: string; amount: string; description: string; created_at: string; event?: { title: string } }[];
-  payouts: { id: number; net_amount: string; destination_account: string; status: string; mpesa_receipt: string | null; result_desc: string | null; created_at: string }[];
+  payouts: { id: number; net_amount: string; destination_account: string; status: string; due_at: string | null; mpesa_receipt: string | null; result_desc: string | null; created_at: string }[];
   by_event: { event_id: number; gross: string; fees: string; net: string; event: { title: string; start_date: string } }[];
 }
 
 const STATUS_STYLE: Record<string, string> = {
   paid: "border-success/50 text-success",
+  requested: "border-yellow-500/50 text-yellow-500",
   processing: "border-primary/50 text-primary",
   rejected: "border-destructive/50 text-destructive",
+  cancelled: "border-border text-muted-foreground",
 };
-const STATUS_LABEL: Record<string, string> = { paid: "Sent", processing: "Processing", rejected: "Failed — refunded" };
+const STATUS_LABEL: Record<string, string> = {
+  paid: "Sent", requested: "Requested", processing: "Sending", rejected: "Declined — refunded", cancelled: "Cancelled",
+};
+
+const when = (iso: string) => new Date(iso).toLocaleString("en-KE", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
 export default function Payouts() {
   const [data, setData] = useState<WalletData | null>(null);
@@ -43,19 +49,30 @@ export default function Payouts() {
 
   useEffect(() => { load(); }, []);
 
-  // Withdrawals settle asynchronously; refresh while any are in flight.
+  // Requests settle on our side; refresh while any are waiting.
   useEffect(() => {
-    if (!data?.payouts.some((p) => p.status === "processing")) return;
-    const t = window.setInterval(load, 8000);
+    if (!data?.payouts.some((p) => p.status === "processing" || p.status === "requested")) return;
+    const t = window.setInterval(load, 30000);
     return () => window.clearInterval(t);
   }, [data]);
+
+  const cancel = async (id: number) => {
+    if (!window.confirm("Cancel this withdrawal request? The money goes back to your balance.")) return;
+    try {
+      const res = await api.post<{ message: string }>(`wallet/withdrawals/${id}/cancel`);
+      toast({ title: "Request cancelled", description: res.message });
+      load();
+    } catch (err) {
+      toast({ title: "Couldn't cancel", description: errorMessage(err), variant: "destructive" });
+    }
+  };
 
   const withdraw = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
       const res = await api.post<{ message: string }>("wallet/withdraw", { amount: Number(amount), password });
-      toast({ title: "Withdrawal sent", description: res.message });
+      toast({ title: "Withdrawal requested", description: res.message });
       setOpen(false);
       setAmount("");
       setPassword("");
@@ -72,7 +89,8 @@ export default function Payouts() {
   }
 
   const s = data.summary;
-  const canWithdraw = !data.withdrawals_paused && !!data.payout_phone && s.balance >= data.min_withdrawal;
+  const canWithdraw = !!data.payout_phone && s.balance >= data.min_withdrawal;
+  const pending = data.payouts.filter((p) => p.status === "requested" || p.status === "processing");
 
   return (
     <div className="min-h-screen bg-background">
@@ -98,24 +116,34 @@ export default function Payouts() {
                 <Link to="/settings" className="text-sm text-primary hover:underline mt-2 inline-block">Add your M-Pesa payout number →</Link>
               )}
             </div>
-            <Button size="lg" disabled={!canWithdraw} onClick={() => { setAmount(String(Math.floor(s.balance))); setOpen(true); }}>
-              <ArrowDownToLine className="w-4 h-4 mr-2" /> Withdraw to M-Pesa
-            </Button>
+            <div className="flex flex-col items-start md:items-end gap-1.5">
+              <Button size="lg" disabled={!canWithdraw} onClick={() => { setAmount(String(Math.floor(s.balance))); setOpen(true); }}>
+                <ArrowDownToLine className="w-4 h-4 mr-2" /> Request withdrawal
+              </Button>
+              <span className="text-xs text-muted-foreground">Paid to your M-Pesa within {data.payout_hours} hours</span>
+            </div>
           </div>
 
-          {data.withdrawals_paused && (
-            <div role="status" className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-4 flex gap-3 text-sm">
-              <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
-              <span className="text-foreground">Withdrawals are paused while we resolve an issue with our M-Pesa provider. Your balance is safe and keeps growing with every sale.</span>
+          {pending.map((p) => (
+            <div key={p.id} role="status" className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-4 flex flex-wrap items-center gap-3 text-sm">
+              <Clock className="w-5 h-5 text-yellow-500 flex-shrink-0" />
+              <span className="text-foreground flex-1 min-w-[200px]">
+                {p.status === "processing"
+                  ? <><strong>{kes(p.net_amount)}</strong> is on its way to {p.destination_account}.</>
+                  : <><strong>{kes(p.net_amount)}</strong> requested — you'll receive it on M-Pesa by <strong>{p.due_at ? when(p.due_at) : "soon"}</strong>.</>}
+              </span>
+              {p.status === "requested" && (
+                <Button size="sm" variant="ghost" onClick={() => cancel(p.id)}>Cancel request</Button>
+              )}
             </div>
-          )}
+          ))}
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { label: "Ticket sales", value: s.gross_sales, icon: TrendingUp },
               { label: `Platform fees (${data.fee_percent}%)`, value: s.platform_fees, icon: Receipt },
               { label: "Withdrawn", value: s.withdrawn, icon: ArrowDownToLine },
-              { label: "Processing", value: s.in_flight, icon: Clock },
+              { label: "Requested (held)", value: s.in_flight, icon: Clock },
             ].map((c) => (
               <div key={c.label} className="glass rounded-2xl p-5">
                 <c.icon className="w-5 h-5 text-primary mb-3" />
@@ -154,7 +182,7 @@ export default function Payouts() {
                   <div key={p.id} className="flex justify-between items-center px-5 py-3 text-sm gap-3">
                     <div className="min-w-0">
                       <div className="text-foreground">To {p.destination_account}{p.mpesa_receipt ? ` · ${p.mpesa_receipt}` : ""}</div>
-                      <div className="text-xs text-muted-foreground">{new Date(p.created_at).toLocaleString("en-KE")}{p.status === "rejected" && p.result_desc ? ` · ${p.result_desc}` : ""}</div>
+                      <div className="text-xs text-muted-foreground">{new Date(p.created_at).toLocaleString("en-KE")}{p.status === "rejected" && p.result_desc ? ` · ${p.result_desc}` : ""}{p.status === "requested" && p.due_at ? ` · expected by ${when(p.due_at)}` : ""}</div>
                     </div>
                     <div className="flex items-center gap-3">
                       <Badge variant="outline" className={STATUS_STYLE[p.status]}>{STATUS_LABEL[p.status] || p.status}</Badge>
@@ -182,8 +210,8 @@ export default function Payouts() {
         <DialogContent>
           <form onSubmit={withdraw}>
             <DialogHeader>
-              <DialogTitle>Withdraw to M-Pesa</DialogTitle>
-              <DialogDescription>Sent to {data.payout_phone}. You'll get an M-Pesa message within a minute or two.</DialogDescription>
+              <DialogTitle>Request a withdrawal</DialogTitle>
+              <DialogDescription>We'll send it to {data.payout_phone} within {data.payout_hours} hours. The amount is set aside from your balance straight away, and you can cancel until it's sent.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 my-5">
               <div className="space-y-1.5">
@@ -199,7 +227,7 @@ export default function Payouts() {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={busy}>{busy ? "Sending…" : `Withdraw ${amount ? kes(amount) : ""}`}</Button>
+              <Button type="submit" disabled={busy}>{busy ? "Requesting…" : `Request ${amount ? kes(amount) : ""}`}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

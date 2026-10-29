@@ -21,6 +21,7 @@ import MyTickets from "./pages/MyTickets";
 import Payouts from "./pages/Payouts";
 import BusinessSettings from "./pages/BusinessSettings";
 import Help from "./pages/Help";
+import AdminPayouts from "./pages/admin/AdminPayouts";
 
 // Not yet moved off Firebase, so not routed: Campaigns, PromoCodes, Rooms,
 // RegistrationFields, Registration, Blog/BlogManager, AgendaManager, SuperAdmin.
@@ -56,6 +57,7 @@ const App = () => (
           <Route path="/payouts" element={<P><Payouts /></P>} />
           <Route path="/wallet" element={<P><Payouts /></P>} />
           <Route path="/settings" element={<P><BusinessSettings /></P>} />
+          <Route path="/admin/payouts" element={<P><AdminPayouts /></P>} />
 
           <Route path="*" element={<NotFound />} />
         </Routes>
