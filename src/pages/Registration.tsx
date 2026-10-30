@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { Loader2, UserPlus, Printer, Gift, Banknote, CheckCircle2 } from "lucide-react";
 import Navigation from "@/components/Navigation";
@@ -30,6 +31,7 @@ const blank = { name: "", phone: "", email: "", quantity: "1" };
 
 /** Door / guest-list registration: issues real tickets without online payment. */
 export default function Registration() {
+  const [params] = useSearchParams();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [eventId, setEventId] = useState("");
   const [tiers, setTiers] = useState<TicketTier[]>([]);
@@ -44,9 +46,13 @@ export default function Registration() {
     api.get<{ data: EventItem[] }>("events?per_page=100").then((r) => {
       const live = r.data.filter((e) => e.status === "published" || e.status === "live");
       setEvents(live);
+      // ?event=<uuid> from the dashboard's "Register guest" shortcut wins;
+      // otherwise pick the next event that hasn't finished.
+      const wanted = live.find((e) => e.uuid === params.get("event"));
       const next = [...live].sort((a, b) => +new Date(a.start_date) - +new Date(b.start_date))
         .find((e) => +new Date(e.end_date || e.start_date) > Date.now() - 12 * 3600_000);
-      if (next || live[0]) setEventId((next || live[0]).uuid);
+      const pick = wanted || next || live[0];
+      if (pick) setEventId(pick.uuid);
     });
   }, []);
 

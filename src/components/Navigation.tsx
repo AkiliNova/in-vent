@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
-  LayoutDashboard, QrCode, ScanLine, Users, MessageSquare, Settings,
+  LayoutDashboard, QrCode, ScanLine, Users, Settings,
   Menu, X, House, LogOut, Tag, Wallet, Ticket, ChevronDown, BookOpen, ShieldCheck
 } from 'lucide-react';
 import { useAuth } from "@/context/AuthContext";
@@ -43,12 +43,13 @@ const Navigation = () => {
   const adminLinks = isSuperAdmin ? [
     { href: '/admin',            label: 'Overview',   icon: LayoutDashboard },
     { href: '/admin/organisers', label: 'Organisers', icon: Users },
+    { href: '/register',         label: 'On-site',    icon: QrCode },
     { href: '/admin/payouts',    label: 'Payouts',    icon: ShieldCheck },
     { href: '/admin/blog',       label: 'Blog',       icon: BookOpen },
   ] : [
     { href: '/dashboard',    label: 'Dashboard', icon: LayoutDashboard },
     { href: '/events',       label: 'Events',    icon: House },
-    { href: '/register',     label: 'Register',  icon: QrCode },
+    { href: '/register',     label: 'On-site',   icon: QrCode },
     { href: '/scanner',      label: 'Scanner',   icon: ScanLine },
     { href: '/guests',       label: 'Guests',    icon: Users },
     { href: '/promo-codes',  label: 'Promos',    icon: Tag },

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { CalendarDays, Users, Wallet, ScanLine, CheckCircle2, Circle, Plus, Loader2, ArrowRight } from "lucide-react";
+import { CalendarDays, Users, Wallet, ScanLine, CheckCircle2, Circle, Plus, Loader2, ArrowRight, UserPlus } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
@@ -107,6 +107,7 @@ export default function Dashboard() {
                         </div>
                         <div className="flex items-center gap-3 text-sm">
                           <span className="text-muted-foreground">{e.attendees_count} attending</span>
+                          <Button size="sm" variant="secondary" asChild><Link to={`/register?event=${e.uuid}`}><UserPlus className="w-3.5 h-3.5 mr-1" />Register guest</Link></Button>
                           <Button size="sm" variant="secondary" asChild><Link to={`/scanner?event=${e.uuid}`}><ScanLine className="w-3.5 h-3.5 mr-1" />Scan</Link></Button>
                         </div>
                       </li>
