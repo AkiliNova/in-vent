@@ -410,3 +410,55 @@ Artisan::command('tikooh:import-legacy-blog {--project=in-vent-app} {--file=} {-
 
     $this->info(($this->option('apply') ? 'Imported ' : 'Would import ')."{$count} post(s).");
 })->purpose('Import published blog posts from the old Firestore project');
+
+Artisan::command('tikooh:server-report {--print : show it here instead of sending}', function () {
+    $report = \App\Support\ServerReport::build();
+
+    if ($this->option('print')) {
+        $this->line(strip_tags($report));
+
+        return 0;
+    }
+
+    return \App\Services\Notify\Telegram::send($report) ? 0 : 1;
+})->purpose('Send the server and app report to the ops Telegram chat');
+
+/*
+ * Points @TikoohBot's updates at this app so /status and /payouts work in the
+ * ops group. Needs TELEGRAM_WEBHOOK_SECRET in .env (any random string).
+ */
+Artisan::command('tikooh:telegram-webhook {--delete}', function () {
+    $api = 'https://api.telegram.org/bot'.config('services.telegram.bot_token');
+
+    if ($this->option('delete')) {
+        $this->line(\Illuminate\Support\Facades\Http::post("{$api}/deleteWebhook")->body());
+
+        return 0;
+    }
+
+    if (! config('services.telegram.webhook_secret')) {
+        $this->error('Set TELEGRAM_WEBHOOK_SECRET first.');
+
+        return 1;
+    }
+
+    $set = \Illuminate\Support\Facades\Http::post("{$api}/setWebhook", [
+        'url' => route('webhooks.telegram'),
+        'secret_token' => config('services.telegram.webhook_secret'),
+        'allowed_updates' => ['message'],
+        'drop_pending_updates' => true,
+    ]);
+    $this->line('setWebhook: '.$set->body());
+
+    // The menu Telegram shows when someone types "/".
+    $cmds = \Illuminate\Support\Facades\Http::post("{$api}/setMyCommands", ['commands' => [
+        ['command' => 'status', 'description' => 'Server and app report'],
+        ['command' => 'payouts', 'description' => 'Withdrawal queue'],
+        ['command' => 'help', 'description' => 'What I can do'],
+    ]]);
+    $this->line('setMyCommands: '.$cmds->body());
+
+    return $set->json('ok') ? 0 : 1;
+})->purpose('Register the Telegram webhook for /status and /payouts');
+
+\Illuminate\Support\Facades\Schedule::command('tikooh:server-report')->twiceDaily(8, 20)->timezone('Africa/Nairobi');

@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\FloorPlanController;
 use App\Http\Controllers\Api\MerchantController;
 use App\Http\Controllers\Api\NetworkingController;
 use App\Http\Controllers\Api\PaymentWebhookController;
+use App\Http\Controllers\Api\TelegramWebhookController;
 use App\Http\Controllers\Api\VenueController;
 use App\Http\Controllers\Api\WalletController;
 use Illuminate\Routing\Middleware\ThrottleRequests;
@@ -82,6 +83,8 @@ Route::prefix('public')->group(function () {
 
 Route::post('webhooks/pesapal', [PaymentWebhookController::class, 'pesapal'])->name('webhooks.pesapal');
 Route::post('webhooks/mpesa', [PaymentWebhookController::class, 'mpesa'])->name('webhooks.mpesa');
+
+Route::post('webhooks/telegram', TelegramWebhookController::class)->name('webhooks.telegram')->middleware('throttle:60,1');
 
 // Registered with Safaricom, which rejects any URL containing "mpesa" — hence "daraja".
 Route::prefix('webhooks/daraja')->withoutMiddleware(ThrottleRequests::class.':api')->group(function () {
