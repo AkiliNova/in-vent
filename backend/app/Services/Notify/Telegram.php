@@ -49,6 +49,27 @@ class Telegram
         }
     }
 
+    /** Posts a text file (e.g. a day's log) to the ops chat. */
+    public static function sendDocument(string $contents, string $filename, string $caption = ''): bool
+    {
+        if (! static::enabled()) {
+            return false;
+        }
+
+        try {
+            return Http::timeout(30)
+                ->attach('document', $contents, $filename)
+                ->post('https://api.telegram.org/bot'.config('services.telegram.bot_token').'/sendDocument', [
+                    'chat_id' => config('services.telegram.chat_id'),
+                    'caption' => mb_substr($caption, 0, 1000),
+                    'parse_mode' => 'HTML',
+                ])
+                ->successful();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     public static function e(?string $value): string
     {
         return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');

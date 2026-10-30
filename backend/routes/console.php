@@ -462,3 +462,39 @@ Artisan::command('tikooh:telegram-webhook {--delete}', function () {
 })->purpose('Register the Telegram webhook for /status and /payouts');
 
 \Illuminate\Support\Facades\Schedule::command('tikooh:server-report')->twiceDaily(8, 20)->timezone('Africa/Nairobi');
+
+/*
+ * Posts a day's Laravel log to the ops chat as a file, redacted. Runs just
+ * after midnight UTC for the day that ended; --date=YYYY-MM-DD for another.
+ */
+Artisan::command('tikooh:send-logs {--date=}', function () {
+    $date = $this->option('date') ?: now()->subDay()->format('Y-m-d');
+    $file = storage_path("logs/laravel-{$date}.log");
+
+    if (! is_file($file) || filesize($file) === 0) {
+        \App\Services\Notify\Telegram::send("📄 No Laravel log for {$date} — a quiet day.");
+
+        return 0;
+    }
+
+    $text = \App\Support\LogRedactor::clean((string) file_get_contents($file));
+    $errors = substr_count($text, '.ERROR:') + substr_count($text, '.CRITICAL:');
+    $warnings = substr_count($text, '.WARNING:');
+
+    // Telegram bots can send files up to 50 MB; keep the newest part if huge.
+    if (strlen($text) > 45 * 1024 * 1024) {
+        $text = "[trimmed to the last 45 MB]\n".substr($text, -45 * 1024 * 1024);
+    }
+
+    $ok = \App\Services\Notify\Telegram::sendDocument(
+        $text,
+        "tikooh-laravel-{$date}.log.txt",
+        "📄 <b>Laravel log {$date}</b> · {$errors} error(s) · {$warnings} warning(s) · phone numbers and secrets masked"
+    );
+
+    $this->info($ok ? 'Sent.' : 'Telegram refused the file.');
+
+    return $ok ? 0 : 1;
+})->purpose("Send a day's Laravel log to the ops Telegram chat");
+
+\Illuminate\Support\Facades\Schedule::command('tikooh:send-logs')->dailyAt('00:10');

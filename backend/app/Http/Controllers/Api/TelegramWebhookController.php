@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\Notify\Telegram;
+use App\Support\LogRedactor;
 use App\Support\ServerReport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,7 +35,8 @@ class TelegramWebhookController extends Controller
         $reply = match ($command) {
             '/status', '/server' => ServerReport::build(),
             '/payouts' => ServerReport::payouts(),
-            '/help', '/start' => "Commands:\n/status — server and app report\n/payouts — withdrawal queue",
+            '/logs' => $this->logs((string) data_get($message, 'text', '')),
+            '/help', '/start' => "Commands:\n/status — server and app report\n/payouts — withdrawal queue\n/logs — latest log lines (/logs 80 for more)",
             default => null,
         };
 
@@ -43,5 +45,21 @@ class TelegramWebhookController extends Controller
         }
 
         return response()->json(['ok' => true]);
+    }
+
+    /** "/logs" or "/logs 80" — the tail of the log, redacted, as a code block. */
+    protected function logs(string $text): string
+    {
+        $n = min(200, max(5, (int) (preg_split('/\s+/', trim($text))[1] ?? 30)));
+        $tail = LogRedactor::tail($n);
+
+        if ($tail === '') {
+            return '📄 No log lines yet today.';
+        }
+
+        // Telegram caps a message at 4096 characters; keep the newest lines.
+        $tail = mb_substr($tail, -3600);
+
+        return "📄 <b>Last {$n} log lines</b>\n<pre>".Telegram::e($tail).'</pre>';
     }
 }

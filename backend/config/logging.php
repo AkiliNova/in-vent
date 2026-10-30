@@ -69,7 +69,7 @@ return [
         'telegram' => [
             'driver' => 'monolog',
             'handler' => App\Logging\TelegramHandler::class,
-            'level' => 'error',
+            'level' => env('LOG_TELEGRAM_LEVEL', 'warning'),
         ],
 
         'daily' => [
