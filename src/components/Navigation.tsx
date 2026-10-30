@@ -38,20 +38,22 @@ const Navigation = () => {
     navigate('/admin/login');
   };
 
-  // Pages not yet moved off Firebase (campaigns, promos, blog, rooms) are
-  // left out until they are ported to the API.
-  const adminLinks = [
+  // Platform admins aren't attached to an organisation, so they get their own
+  // menu rather than the organiser pages (which assume one).
+  const adminLinks = isSuperAdmin ? [
+    { href: '/admin',            label: 'Overview',   icon: LayoutDashboard },
+    { href: '/admin/organisers', label: 'Organisers', icon: Users },
+    { href: '/admin/payouts',    label: 'Payouts',    icon: ShieldCheck },
+    { href: '/admin/blog',       label: 'Blog',       icon: BookOpen },
+  ] : [
     { href: '/dashboard',    label: 'Dashboard', icon: LayoutDashboard },
     { href: '/events',       label: 'Events',    icon: House },
+    { href: '/register',     label: 'Register',  icon: QrCode },
     { href: '/scanner',      label: 'Scanner',   icon: ScanLine },
     { href: '/guests',       label: 'Guests',    icon: Users },
     { href: '/promo-codes',  label: 'Promos',    icon: Tag },
     { href: '/payouts',      label: 'Wallet',    icon: Wallet },
     { href: '/settings',     label: 'Business',  icon: Settings },
-    ...(isSuperAdmin ? [
-      { href: '/admin/payouts', label: 'Payouts', icon: ShieldCheck },
-      { href: '/admin/blog',    label: 'Blog',    icon: BookOpen },
-    ] : []),
   ];
 
   const publicExtraLinks = [{ href: '/my-tickets', label: 'My Tickets', icon: Ticket }];

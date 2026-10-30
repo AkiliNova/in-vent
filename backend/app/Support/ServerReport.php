@@ -128,11 +128,20 @@ class ServerReport
 
     protected static function services(): string
     {
-        return collect(self::SERVICES)->map(function (string $s) {
+        $out = collect(self::SERVICES)->map(function (string $s) {
             $state = trim((string) Process::timeout(5)->run(['systemctl', 'is-active', $s])->output());
 
             return ($state === 'active' ? '✅' : '❌').' '.$s;
-        })->implode('  ');
+        });
+
+        // aaPanel's init script reports "active" even when the panel is dead,
+        // so check for the process itself.
+        if (is_dir('/www/server/panel')) {
+            $up = trim((string) Process::timeout(5)->run(['pgrep', '-f', 'panel/BT-Panel'])->output()) !== '';
+            $out->push(($up ? '✅' : '❌').' aapanel');
+        }
+
+        return $out->implode('  ');
     }
 
     /** Days until our own HTTPS certificate expires, read off a TLS handshake. */

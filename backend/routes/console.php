@@ -130,6 +130,12 @@ Artisan::command('tikooh:health', function () {
     }
     \Illuminate\Support\Facades\Cache::forever('health:failed_jobs', $failed);
 
+    // aaPanel (portal.sendtrack.co.ke) silently stayed down for days once.
+    // This runs as www-data, so it can only report, not restart (that needs root).
+    if (is_dir('/www/server/panel') && trim((string) @shell_exec('pgrep -f "panel/BT-Panel"')) === '') {
+        $problems[] = 'aaPanel is down (portal.sendtrack.co.ke gives 502). Fix: ssh sendtrack && /etc/init.d/bt start';
+    }
+
     $free = @disk_free_space(base_path());
     $total = @disk_total_space(base_path());
     if ($free && $total && $free / $total < 0.10) {

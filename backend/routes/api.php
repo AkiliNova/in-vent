@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AccommodationController;
+use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AgendaController;
 use App\Http\Controllers\Api\AttendeeController;
 use App\Http\Controllers\Api\AuthController;
@@ -21,6 +22,7 @@ use App\Http\Controllers\Api\FloorPlanController;
 use App\Http\Controllers\Api\MerchantController;
 use App\Http\Controllers\Api\NetworkingController;
 use App\Http\Controllers\Api\PaymentWebhookController;
+use App\Http\Controllers\Api\RegistrationController;
 use App\Http\Controllers\Api\TelegramWebhookController;
 use App\Http\Controllers\Api\VenueController;
 use App\Http\Controllers\Api\WalletController;
@@ -144,6 +146,10 @@ Route::middleware('auth:sanctum')->group(function () {
             // Attendees
             Route::get('attendees', [AttendeeController::class, 'index']);
             Route::get('attendees/export', [AttendeeController::class, 'export']);
+
+            // Door registration: walk-ins, VIPs, cash at the gate
+            Route::get('registrations', [RegistrationController::class, 'index']);
+            Route::post('registrations', [RegistrationController::class, 'store'])->middleware('throttle:60,1');
 
             // Check-in (features 6, 15)
             Route::post('check-in/scan', [CheckInController::class, 'scan']);
@@ -290,6 +296,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // ── Platform staff ──────────────────────────────────────────────────────
     Route::middleware('role:super_admin')->prefix('admin')->group(function () {
         Route::get('overview', [DashboardController::class, 'platform']);
+        Route::get('dashboard', [AdminController::class, 'overview']);
+        Route::get('organisers', [AdminController::class, 'organisers']);
+        Route::put('organisers/{tenant}', [AdminController::class, 'updateOrganiser'])->whereNumber('tenant');
         Route::get('payments/unmatched', [WalletController::class, 'unmatchedC2b']);
         Route::get('payouts/pending', [WalletController::class, 'pendingPayouts']);
         Route::get('payouts', [WalletController::class, 'adminPayouts']);

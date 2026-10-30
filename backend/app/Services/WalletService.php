@@ -68,6 +68,12 @@ class WalletService
     {
         $gross = round((float) $order->total, 2);
 
+        // Cash taken at the door is already in the organiser's hand; crediting
+        // it would let them withdraw it a second time.
+        if (in_array($order->provider, ['cash', 'complimentary'], true)) {
+            return;
+        }
+
         if ($gross <= 0 || WalletEntry::withoutGlobalScope('tenant')->where('order_id', $order->id)->exists()) {
             return;
         }

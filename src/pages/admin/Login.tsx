@@ -23,7 +23,7 @@ const AdminLogin = () => {
 
     try {
       const user = await login(email, password);
-      navigate(user.role === "super_admin" ? "/admin/payouts" : "/dashboard");
+      navigate(user.role === "super_admin" ? "/admin" : "/dashboard");
     } catch (err) {
       setError(errorMessage(err));
     } finally {

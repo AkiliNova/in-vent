@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { CalendarDays, Users, Wallet, ScanLine, CheckCircle2, Circle, Plus, Loader2, ArrowRight } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,9 @@ export default function Dashboard() {
   }, [user]);
 
   const pending = merchant?.checklist.filter((c) => !c.done) ?? [];
+
+  // Platform admins have their own overview.
+  if (user?.role === "super_admin") return <Navigate to="/admin" replace />;
 
   return (
     <div className="min-h-screen bg-background">

@@ -1,486 +1,202 @@
-"use client";
-
-import { useState, useEffect } from "react";
-import {
-  User,
-  Mail,
-  Phone,
-  UtensilsCrossed,
-  Check,
-  QrCode,
-  Wallet,
-  ArrowRight
-} from "lucide-react";
+import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { Loader2, UserPlus, Printer, Gift, Banknote, CheckCircle2 } from "lucide-react";
+import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
-import Navigation from "@/components/Navigation";
-import { db } from "@/firebase/firebase";
-import { collection, addDoc, serverTimestamp, query, where, getDocs, updateDoc, doc, getDoc } from "firebase/firestore";
-import { useAuth } from "@/context/AuthContext";
+import { api, errorMessage, kes, EventItem, TicketTier } from "@/lib/api";
 
-// -----------------------------
-// Types
-// -----------------------------
-interface FormData {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  guestCategory: string;
-  companyOrIndividual: string;
-  dietaryRestrictions: string;
-  agreeTerms: boolean;
-  agreeMarketing: boolean;
-  guestId: string;
-  status: "pending" | "checked-in" | "flagged";
-  checkedInAt?: string;
-  amountPaid: number;
-  customFields: Record<string, any>;
+interface Result {
+  reference: string;
+  total: string;
+  payment: "complimentary" | "cash";
+  tickets: { code: string; holder_name: string | null }[];
 }
 
-interface AppSettings {
-  dietaryOptions: string[];
-}
-type DynamicFieldType =
-  | "text"
-  | "number"
-  | "email"
-  | "select"
-  | "checkbox"
-  | "textarea";
-
-interface DynamicField {
-  id: string;
-  label: string;
-  type: DynamicFieldType;
-  required?: boolean;
-  step: 1 | 2;
-  order?: number;
-  placeholder?: string;
-  options?: string[];
-  enabled?: boolean;
+interface Recent {
+  id: number;
+  reference: string;
+  buyer_name: string;
+  buyer_phone: string | null;
+  total: string;
+  provider: string;
+  paid_at: string;
+  tickets_count: number;
 }
 
+const blank = { name: "", phone: "", email: "", quantity: "1" };
 
-// -----------------------------
-// Registration Component
-// -----------------------------
-const Registration = () => {
-  const { tenantId } = useAuth();
-  const [step, setStep] = useState(1);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [ticketId, setTicketId] = useState<string | null>(null);
-
-  const [formData, setFormData] = useState<FormData>({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    guestCategory: '',
-    companyOrIndividual: '',
-    dietaryRestrictions: 'None',
-    agreeTerms: false,
-    agreeMarketing: false,
-    guestId: '',
-    status: "pending",
-    amountPaid: 0,
-    customFields: {},
-  });
-
-  const [settings, setSettings] = useState<AppSettings>({
-    dietaryOptions: ["None", "Vegetarian", "Vegan", "Gluten-Free", "Halal", "Kosher"]
-  });
-
-  // -----------------------------
-  // Load tenant-scoped settings
-  // -----------------------------
-  useEffect(() => {
-    const fetchSettings = async () => {
-      if (!tenantId) return;
-      try {
-        const docRef = doc(db, `tenants/${tenantId}/app_settings`, "settings");
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          const data = snap.data() as AppSettings;
-          if (data.dietaryOptions?.length) {
-            setSettings({ dietaryOptions: data.dietaryOptions });
-            if (!data.dietaryOptions.includes(formData.dietaryRestrictions)) {
-              setFormData(prev => ({ ...prev, dietaryRestrictions: data.dietaryOptions[0] }));
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load settings:", error);
-      }
-    };
-    fetchSettings();
-  }, [tenantId]);
-  const [dynamicFields, setDynamicFields] = useState<DynamicField[]>([]);
+/** Door / guest-list registration: issues real tickets without online payment. */
+export default function Registration() {
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [eventId, setEventId] = useState("");
+  const [tiers, setTiers] = useState<TicketTier[]>([]);
+  const [tierId, setTierId] = useState("");
+  const [payment, setPayment] = useState<"cash" | "complimentary">("cash");
+  const [form, setForm] = useState(blank);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<Result | null>(null);
+  const [recent, setRecent] = useState<Recent[]>([]);
 
   useEffect(() => {
-    if (!tenantId) return;
+    api.get<{ data: EventItem[] }>("events?per_page=100").then((r) => {
+      const live = r.data.filter((e) => e.status === "published" || e.status === "live");
+      setEvents(live);
+      const next = [...live].sort((a, b) => +new Date(a.start_date) - +new Date(b.start_date))
+        .find((e) => +new Date(e.end_date || e.start_date) > Date.now() - 12 * 3600_000);
+      if (next || live[0]) setEventId((next || live[0]).uuid);
+    });
+  }, []);
 
-    const loadDynamicFields = async () => {
-      const snap = await getDocs(
-        collection(db, `tenants/${tenantId}/registration_fields`)
-      );
+  const loadRecent = (uuid: string) =>
+    api.get<Recent[]>(`events/${uuid}/registrations`).then(setRecent).catch(() => setRecent([]));
 
-      const fields = snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as DynamicField))
-        .filter(f => f.enabled !== false)
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  useEffect(() => {
+    if (!eventId) return;
+    setResult(null);
+    api.get<EventItem>(`events/${eventId}`).then((e) => {
+      const active = (e.ticket_tiers || []).filter((t) => t.is_active);
+      setTiers(active);
+      setTierId(active[0] ? String(active[0].id) : "");
+    });
+    loadRecent(eventId);
+  }, [eventId]);
 
-      setDynamicFields(fields);
+  const tier = tiers.find((t) => String(t.id) === tierId);
+  const qty = Math.max(1, Number(form.quantity) || 1);
+  const due = tier ? Number(tier.price) * qty : 0;
 
-      // initialize values
-      const values: Record<string, any> = {};
-      fields.forEach(f => {
-        values[f.id] = f.type === "checkbox" ? false : "";
-      });
-
-      setFormData(prev => ({
-        ...prev,
-        customFields: {
-          ...values,
-          ...prev.customFields,
-        },
-      }));
-
-    };
-
-    loadDynamicFields();
-  }, [tenantId]);
-
-  const handleInputChange = (field: string, value: string | boolean | number) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
-  const dynamicFieldsValid = (step: 1 | 2) =>
-    dynamicFields
-      .filter(f => f.required && f.step === step)
-      .every(f => Boolean(formData.customFields[f.id]));
-
-  const isStep1Valid =
-    formData.firstName &&
-    formData.lastName &&
-    formData.email &&
-    formData.phone &&
-    formData.guestCategory &&
-    formData.companyOrIndividual
-    && dynamicFieldsValid(1);
-
-  const isStep2Valid =
-    formData.agreeTerms && formData.amountPaid >= 0 && dynamicFieldsValid(2);
-
-
-  // -----------------------------
-  // Submit Registration
-  // -----------------------------
-  const handleSubmit = async () => {
-    if (!tenantId) {
-      toast({
-        title: "Tenant Not Found",
-        description: "You cannot register without a tenant.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (!isStep2Valid) return;
-
-    setIsSubmitting(true);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
     try {
-      const guestsRef = collection(db, `tenants/${tenantId}/guests`);
-
-      // Check for duplicate email
-      const emailQuery = query(guestsRef, where("email", "==", formData.email));
-      const emailSnapshot = await getDocs(emailQuery);
-      if (!emailSnapshot.empty) {
-        toast({
-          title: "Email Already Registered",
-          description: "This email is already registered for this tenant.",
-          variant: "destructive"
-        });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Prepare guest data safely
-      const guestData: any = {
-        ...formData,
-        createdAt: serverTimestamp(),
-        registeredAt: new Date().toISOString(),
-      };
-      if (formData.status === 'checked-in') {
-        guestData.checkedInAt = new Date().toISOString();
-      }
-
-      // Add guest
-      const docRef = await addDoc(guestsRef, guestData);
-
-      // Update guestId
-      await updateDoc(docRef, { guestId: docRef.id });
-      setFormData(prev => ({ ...prev, guestId: docRef.id }));
-      setTicketId(docRef.id);
-
-      toast({ title: "Registration Complete!", description: "Your QR pass has been generated." });
-      setStep(3);
-
-    } catch (error: any) {
-      console.error(error);
-      toast({ title: "Registration Failed", description: error.message || "Something went wrong.", variant: "destructive" });
+      const r = await api.post<Result>(`events/${eventId}/registrations`, {
+        ticket_tier_id: Number(tierId),
+        quantity: qty,
+        name: form.name,
+        phone: form.phone || null,
+        email: form.email || null,
+        payment,
+      });
+      setResult(r);
+      setForm(blank);
+      loadRecent(eventId);
+      toast({ title: `${form.name} registered`, description: form.phone ? "Ticket also sent by SMS." : undefined });
+    } catch (err) {
+      toast({ title: "Couldn't register", description: errorMessage(err), variant: "destructive" });
     } finally {
-      setIsSubmitting(false);
-    }
-  };
-  const renderDynamicField = (field: DynamicField) => {
-    const value = formData.customFields[field.id];
-
-    const update = (val: any) =>
-      setFormData(p => ({
-        ...p,
-        customFields: { ...p.customFields, [field.id]: val }
-      }));
-
-    switch (field.type) {
-      case "text":
-      case "email":
-      case "number":
-        return (
-          <Input
-            type={field.type}
-            placeholder={field.placeholder}
-            value={value}
-            onChange={e => update(e.target.value)}
-          />
-        );
-
-      case "textarea":
-        return (
-          <textarea
-            className="w-full rounded-md border p-3"
-            placeholder={field.placeholder}
-            value={value}
-            onChange={e => update(e.target.value)}
-          />
-        );
-
-      case "select":
-        return (
-          <Select value={value} onValueChange={update}>
-            <SelectTrigger>
-              <SelectValue placeholder={field.placeholder} />
-            </SelectTrigger>
-            <SelectContent>
-              {field.options?.map(opt => (
-                <SelectItem key={opt} value={opt}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
-
-      case "checkbox":
-        return (
-          <Checkbox checked={value} onCheckedChange={update} />
-        );
+      setBusy(false);
     }
   };
 
+  const set = (k: keyof typeof blank) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  // -----------------------------
-  // Render
-  // -----------------------------
   return (
     <div className="min-h-screen bg-background">
-  <Navigation />
-  <main className="pt-24 pb-12 px-4 sm:px-6 md:px-6">
-    <div className="container mx-auto max-w-xl sm:max-w-2xl">
-
-      {/* Progress Steps */}
-      <div className="flex flex-wrap items-center justify-center gap-4 mb-12">
-        {[1, 2, 3].map((s) => (
-          <div key={s} className="flex items-center gap-4 flex-1 min-w-[60px]">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${step >= s ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"}`}>
-              {step > s ? <Check className="w-5 h-5" /> : s}
-            </div>
-            {s < 3 && <div className={`flex-1 h-1 rounded-full transition-all ${step > s ? "bg-primary" : "bg-secondary"}`} />}
-          </div>
-        ))}
-      </div>
-
-      {/* STEP 1 */}
-      {step === 1 && (
-        <div className="glass rounded-3xl p-6 sm:p-8 animate-slide-up">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <Navigation />
+      <main className="pt-24 pb-12 px-4 md:px-6 print:pt-0">
+        <div className="container mx-auto max-w-4xl grid md:grid-cols-5 gap-6">
+          <section className="md:col-span-3 space-y-5 print:hidden">
             <div>
-              <Label className="flex items-center gap-2"><User className="w-4 h-4" /> First Name</Label>
-              <Input className="h-12" value={formData.firstName} onChange={e => handleInputChange("firstName", e.target.value)} />
+              <h1 className="text-3xl font-bold text-foreground">Register a guest</h1>
+              <p className="text-muted-foreground">Walk-ins, VIPs and guest lists. Each guest gets a ticket the scanner accepts.</p>
             </div>
-            <div>
-              <Label>Last Name</Label>
-              <Input className="h-12" value={formData.lastName} onChange={e => handleInputChange("lastName", e.target.value)} />
-            </div>
-          </div>
 
-          <div className="mt-4">
-            <Label className="flex items-center gap-2"><Mail className="w-4 h-4" /> Email</Label>
-            <Input type="email" className="h-12" value={formData.email} onChange={e => handleInputChange("email", e.target.value)} />
-          </div>
-          <div className="mt-4">
-            <Label className="flex items-center gap-2"><Phone className="w-4 h-4" /> Phone</Label>
-            <Input className="h-12" value={formData.phone} onChange={e => handleInputChange("phone", e.target.value)} />
-          </div>
+            <form onSubmit={submit} className="glass rounded-2xl p-5 space-y-4">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5"><Label htmlFor="ev">Event</Label>
+                  <select id="ev" value={eventId} onChange={(e) => setEventId(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                    {events.length === 0 && <option value="">No published events</option>}
+                    {events.map((e) => <option key={e.uuid} value={e.uuid}>{e.title}</option>)}
+                  </select></div>
+                <div className="space-y-1.5"><Label htmlFor="tt">Ticket type</Label>
+                  <select id="tt" value={tierId} onChange={(e) => setTierId(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                    {tiers.map((t) => <option key={t.id} value={t.id}>{t.name} — {Number(t.price) > 0 ? kes(t.price) : "Free"} ({Math.max(0, t.capacity - t.sold - (t.reserved || 0))} left)</option>)}
+                  </select></div>
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-            <div>
-              <Label>Guest Category</Label>
-              <Select onValueChange={value => handleInputChange("guestCategory", value)}>
-                <SelectTrigger className="h-12"><SelectValue placeholder="Select Category" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="VIP">VIP</SelectItem>
-                  <SelectItem value="Guest">Guest</SelectItem>
-                  <SelectItem value="Speaker">Speaker</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Company / Individual</Label>
-              <Input className="h-12" value={formData.companyOrIndividual} onChange={e => handleInputChange("companyOrIndividual", e.target.value)} />
-            </div>
-          </div>
+              <div className="space-y-1.5"><Label htmlFor="gn">Guest name</Label>
+                <Input id="gn" required autoComplete="off" value={form.name} onChange={set("name")} /></div>
+              <div className="grid sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="gp">Phone (ticket sent by SMS)</Label>
+                  <Input id="gp" type="tel" placeholder="0712 345 678" value={form.phone} onChange={set("phone")} /></div>
+                <div className="space-y-1.5"><Label htmlFor="gq">Tickets</Label>
+                  <Input id="gq" type="number" min={1} max={20} value={form.quantity} onChange={set("quantity")} /></div>
+              </div>
+              <div className="space-y-1.5"><Label htmlFor="ge">Email (optional)</Label>
+                <Input id="ge" type="email" value={form.email} onChange={set("email")} /></div>
 
-          {dynamicFields.filter(f => f.step === 1).map(field => (
-            <div key={field.id} className="mt-4">
-              <Label>{field.label}{field.required && " *"}</Label>
-              {renderDynamicField(field)}
-            </div>
-          ))}
+              <fieldset>
+                <legend className="text-sm font-medium mb-2">Payment</legend>
+                <div className="grid grid-cols-2 gap-3">
+                  {([
+                    { id: "cash", label: "Paid cash", hint: due > 0 ? `Collect ${kes(due)}` : "Free tier", icon: Banknote },
+                    { id: "complimentary", label: "Complimentary", hint: "No charge", icon: Gift },
+                  ] as const).map((p) => (
+                    <button key={p.id} type="button" aria-pressed={payment === p.id} onClick={() => setPayment(p.id)}
+                      className={`text-left rounded-xl border p-3 ${payment === p.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
+                      <p.icon className={`w-5 h-5 mb-1 ${payment === p.id ? "text-primary" : "text-muted-foreground"}`} />
+                      <div className="text-sm font-medium text-foreground">{p.label}</div>
+                      <div className="text-xs text-muted-foreground">{p.hint}</div>
+                    </button>
+                  ))}
+                </div>
+                {payment === "cash" && due > 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">Cash stays with you — it's recorded in your sales but not added to your Tikooh wallet.</p>
+                )}
+              </fieldset>
 
-          <Button variant="hero" size="xl" className="w-full mt-6" disabled={!isStep1Valid} onClick={() => setStep(2)}>
-            Continue <ArrowRight className="w-5 h-5" />
-          </Button>
+              <Button type="submit" className="w-full" disabled={busy || !eventId || !tierId}>
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <><UserPlus className="w-4 h-4 mr-2" /> Register & issue ticket</>}
+              </Button>
+            </form>
+          </section>
+
+          <aside className="md:col-span-2 space-y-4">
+            {result ? (
+              <div className="glass rounded-2xl p-5 space-y-3 print:shadow-none print:border-0">
+                <div className="flex items-center gap-2 text-success font-semibold print:hidden"><CheckCircle2 className="w-5 h-5" /> Ticket issued</div>
+                {result.tickets.map((t) => (
+                  <div key={t.code} className="bg-white rounded-xl p-4 flex flex-col items-center">
+                    <QRCodeSVG value={t.code} size={180} />
+                    <div className="mt-2 text-black font-semibold">{t.holder_name || "Guest"}</div>
+                    <div className="font-mono text-xs text-black">{t.code}</div>
+                    <div className="text-xs text-gray-600">{events.find((e) => e.uuid === eventId)?.title}</div>
+                  </div>
+                ))}
+                <Button variant="secondary" className="w-full print:hidden" onClick={() => window.print()}>
+                  <Printer className="w-4 h-4 mr-2" /> Print
+                </Button>
+              </div>
+            ) : (
+              <div className="glass rounded-2xl p-5 text-sm text-muted-foreground print:hidden">
+                The guest's QR code appears here. They can show it on your screen, or you can print it.
+              </div>
+            )}
+
+            {recent.length > 0 && (
+              <div className="glass rounded-2xl p-5 print:hidden">
+                <h2 className="font-semibold text-foreground mb-2">Registered at the door</h2>
+                <ul className="divide-y divide-border text-sm">
+                  {recent.slice(0, 15).map((r) => (
+                    <li key={r.id} className="py-2 flex justify-between gap-2">
+                      <span className="text-foreground truncate">{r.buyer_name} <span className="text-muted-foreground">×{r.tickets_count}</span></span>
+                      <span className="text-muted-foreground whitespace-nowrap">{r.provider === "complimentary" ? "Comp" : kes(r.total)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Cash collected: {kes(recent.filter((r) => r.provider === "cash").reduce((s, r) => s + Number(r.total), 0))}
+                </p>
+              </div>
+            )}
+          </aside>
         </div>
-      )}
-
-      {/* STEP 2 */}
-      {step === 2 && (
-        <div className="glass rounded-3xl p-6 sm:p-8 animate-slide-up">
-          {/* Dietary */}
-          <Label className="flex items-center gap-2"><UtensilsCrossed className="w-4 h-4" /> Dietary Needs</Label>
-          <Select value={formData.dietaryRestrictions} onValueChange={val => setFormData(prev => ({ ...prev, dietaryRestrictions: val }))}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="Select Dietary Preference" /></SelectTrigger>
-            <SelectContent>
-              {settings.dietaryOptions.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-            </SelectContent>
-          </Select>
-
-          {/* Amount Paid */}
-          <div className="mt-4">
-            <Label className="flex items-center gap-2"><Wallet className="w-4 h-4" /> Amount Paid</Label>
-            <Input type="number" min="0" className="h-12" value={formData.amountPaid} onChange={e => handleInputChange("amountPaid", Number(e.target.value))} placeholder="Enter amount paid" />
-          </div>
-
-          {/* Status */}
-          <div className="mt-4">
-            <Label>Status</Label>
-            <div className="flex flex-wrap gap-4 mt-2">
-              {['pending', 'checked-in', 'flagged'].map(s => (
-                <label key={s} className="flex items-center gap-2">
-                  <input type="radio" name="status" value={s} checked={formData.status === s} onChange={() => setFormData(prev => ({ ...prev, status: s as "pending" | "checked-in" | "flagged", checkedInAt: s === 'checked-in' ? new Date().toISOString() : undefined }))} />
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {dynamicFields.filter(f => f.step === 2).map(field => (
-            <div key={field.id} className="mt-4">
-              <Label>{field.label}{field.required && " *"}</Label>
-              {renderDynamicField(field)}
-            </div>
-          ))}
-
-          {/* Agreements */}
-          <div className="space-y-4 pt-4 border-t border-border">
-            <div className="flex items-start space-x-3">
-              <Checkbox checked={formData.agreeTerms} onCheckedChange={checked => handleInputChange("agreeTerms", checked as boolean)} />
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                I agree to the <a className="text-primary hover:underline">Terms</a> and <a className="text-primary hover:underline">Privacy</a>
-              </p>
-            </div>
-            <div className="flex items-start space-x-3">
-              <Checkbox checked={formData.agreeMarketing} onCheckedChange={checked => handleInputChange("agreeMarketing", checked as boolean)} />
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                I’d like to receive updates about future events.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-4 mt-4">
-            <Button variant="outline" size="xl" className="flex-1" onClick={() => setStep(1)}>Back</Button>
-            <Button variant="hero" size="xl" disabled={!isStep2Valid || isSubmitting} onClick={handleSubmit} className="flex-1">
-              {isSubmitting ? "Processing..." : <>Get My QR Pass <QrCode className="w-5 h-5" /></>}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 3 */}
-      {step === 3 && (
-        <div className="glass rounded-3xl p-6 sm:p-8 text-center animate-scale-in">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-success/20 flex items-center justify-center">
-            <Check className="w-10 h-10 text-success" />
-          </div>
-          <h1 className="text-3xl font-bold mb-2">You're All Set!</h1>
-          <p className="text-muted-foreground mb-8">Your QR pass is ready. Show this at the door.</p>
-
-          <div className="relative w-full max-w-xs h-auto mx-auto mb-8">
-            <QRCodeSVG value={`ticket:${formData.guestId}`} size={184} level="H" bgColor="#ffffff" fgColor="#000000" />
-          </div>
-
-          <p className="text-sm text-muted-foreground font-medium">{formData.firstName} {formData.lastName}</p>
-          <p className="text-xs text-muted-foreground font-mono">{ticketId ? `TICKET-${ticketId}` : "TICKET-GENERATED"}</p>
-
-          <div className="flex flex-col sm:flex-row gap-3 mt-4">
-            <Button variant="hero" size="lg" className="flex-1"><Wallet className="w-5 h-5" /> Add to Wallet</Button>
-            <Button variant="heroOutline" size="lg" className="flex-1"><Mail className="w-5 h-5" /> Email QR Code</Button>
-          </div>
-
-          <Button variant="outline" size="lg" className="mt-6 w-full" onClick={() => {
-            setFormData({
-              firstName: '',
-              lastName: '',
-              email: '',
-              phone: '',
-              guestCategory: '',
-              companyOrIndividual: '',
-              dietaryRestrictions: settings.dietaryOptions[0],
-              agreeTerms: false,
-              agreeMarketing: false,
-              guestId: '',
-              status: "pending",
-              amountPaid: 0,
-              customFields: {},
-            });
-            setTicketId(null);
-            setStep(1);
-          }}>
-            Register Someone Else
-          </Button>
-        </div>
-      )}
-
+      </main>
     </div>
-  </main>
-</div>
-
   );
-};
-
-export default Registration;
+}
