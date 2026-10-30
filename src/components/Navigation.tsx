@@ -43,6 +43,7 @@ const Navigation = () => {
   const adminLinks = isSuperAdmin ? [
     { href: '/admin',            label: 'Overview',   icon: LayoutDashboard },
     { href: '/admin/organisers', label: 'Organisers', icon: Users },
+    { href: '/events',           label: 'Events',     icon: House },
     { href: '/register',         label: 'On-site',    icon: QrCode },
     { href: '/admin/payouts',    label: 'Payouts',    icon: ShieldCheck },
     { href: '/admin/blog',       label: 'Blog',       icon: BookOpen },

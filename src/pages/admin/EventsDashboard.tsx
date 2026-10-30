@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Plus, Pencil, Trash2, Globe, CalendarDays, MapPin, Copy, ExternalLink, ImageIcon, Ticket, Loader2,
+  EyeOff, Archive, Flag, Building2, Search,
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,9 +43,30 @@ const toLocalInput = (iso?: string | null) => {
 
 export const publicEventUrl = (uuid: string) => `${window.location.origin}/e/${uuid}`;
 
+const STATUS_STYLE: Record<string, string> = {
+  published: "border-success/50 text-success",
+  live: "border-success/50 text-success",
+  draft: "border-yellow-500/50 text-yellow-500",
+  ended: "border-border text-muted-foreground",
+  archived: "border-border text-muted-foreground",
+};
+
+type AdminEvent = EventItem & { tenant?: { id: number; organization_name: string } };
+
+/**
+ * Organisers see their own events. Platform admins see every organiser's,
+ * with filters, an organiser picker when creating, and status controls.
+ */
 const EventsDashboard = () => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "super_admin";
   const [params, setParams] = useSearchParams();
-  const [events, setEvents] = useState<EventItem[]>([]);
+  const [events, setEvents] = useState<AdminEvent[]>([]);
+  const [organisers, setOrganisers] = useState<{ id: number; organization_name: string }[]>([]);
+  const [tenantId, setTenantId] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [orgFilter, setOrgFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<EventItem | null>(null);
@@ -55,7 +78,11 @@ const EventsDashboard = () => {
 
   const load = async () => {
     try {
-      const res = await api.get<{ data: EventItem[] }>("events?per_page=100");
+      const q = new URLSearchParams({ per_page: "100" });
+      if (search) q.set("search", search);
+      if (statusFilter) q.set("status", statusFilter);
+      if (orgFilter) q.set("tenant_id", orgFilter);
+      const res = await api.get<{ data: AdminEvent[] }>(`events?${q}`);
       setEvents(res.data);
     } catch (e) {
       toast({ title: "Couldn't load events", description: errorMessage(e), variant: "destructive" });
@@ -64,7 +91,27 @@ const EventsDashboard = () => {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const t = window.setTimeout(load, 250);
+    return () => window.clearTimeout(t);
+  }, [search, statusFilter, orgFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.get<{ data: { id: number; organization_name: string }[] }>("admin/organisers?per_page=500&include_legacy=1")
+      .then((r) => setOrganisers(r.data)).catch(() => {});
+  }, [isAdmin]);
+
+  const setStatus = async (ev: AdminEvent, status: string, label: string) => {
+    if (!window.confirm(`${label} "${ev.title}"?`)) return;
+    try {
+      await api.put(`events/${ev.uuid}`, { status });
+      toast({ title: `${label}: done` });
+      load();
+    } catch (e) {
+      toast({ title: `Couldn't ${label.toLowerCase()}`, description: errorMessage(e), variant: "destructive" });
+    }
+  };
 
   // /events?new=1 from onboarding opens the form straight away.
   useEffect(() => {
@@ -76,6 +123,7 @@ const EventsDashboard = () => {
 
   const openCreate = () => {
     setEditing(null);
+    setTenantId(orgFilter);
     setForm(emptyForm);
     setTiers([newTier()]);
     setRemovedTierIds([]);
@@ -110,6 +158,10 @@ const EventsDashboard = () => {
       toast({ title: "Add a title and start date", variant: "destructive" });
       return;
     }
+    if (isAdmin && !editing && !tenantId) {
+      toast({ title: "Choose which organiser this event belongs to", variant: "destructive" });
+      return;
+    }
     if (publish && tiers.filter((t) => t.name).length === 0) {
       toast({ title: "Add at least one ticket type before publishing", variant: "destructive" });
       return;
@@ -123,6 +175,7 @@ const EventsDashboard = () => {
         end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
         location_map_link: form.location_map_link || null,
         is_public: true,
+        ...(isAdmin && !editing ? { tenant_id: Number(tenantId) } : {}),
       };
       const event = editing
         ? await api.put<EventItem>(`events/${editing.uuid}`, body)
@@ -189,12 +242,33 @@ const EventsDashboard = () => {
       <Navigation />
       <main className="pt-24 pb-12 px-4 md:px-6">
         <div className="container mx-auto max-w-5xl">
-          <div className="flex items-center justify-between gap-4 mb-8">
+          <div className="flex items-center justify-between gap-4 mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Events</h1>
-              <p className="text-muted-foreground">Create an event, add ticket types, publish and share.</p>
+              <h1 className="text-3xl font-bold text-foreground">{isAdmin ? "All events" : "Events"}</h1>
+              <p className="text-muted-foreground">
+                {isAdmin ? "Every organiser's events. Create on their behalf, edit, unpublish or archive." : "Create an event, add ticket types, publish and share."}
+              </p>
             </div>
             <Button onClick={openCreate}><Plus className="w-4 h-4 mr-2" /> New event</Button>
+          </div>
+
+          <div className="flex flex-wrap gap-3 mb-6">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" aria-hidden />
+              <Input className="pl-9" placeholder="Search events" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search events" />
+            </div>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">All statuses</option>
+              {["draft", "published", "live", "ended", "archived"].map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            {isAdmin && (
+              <select value={orgFilter} onChange={(e) => setOrgFilter(e.target.value)} aria-label="Organiser"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm max-w-[220px]">
+                <option value="">All organisers</option>
+                {organisers.map((o) => <option key={o.id} value={o.id}>{o.organization_name}</option>)}
+              </select>
+            )}
           </div>
 
           {loading ? (
@@ -218,10 +292,13 @@ const EventsDashboard = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <h2 className="font-semibold text-foreground truncate">{ev.title}</h2>
-                      <Badge variant="outline" className={ev.status === "published" ? "border-success/50 text-success" : "border-yellow-500/50 text-yellow-500"}>
-                        {ev.status}
-                      </Badge>
+                      <Badge variant="outline" className={STATUS_STYLE[ev.status] || ""}>{ev.status}</Badge>
                     </div>
+                    {isAdmin && ev.tenant && (
+                      <div className="text-xs text-primary flex items-center gap-1 mb-1">
+                        <Building2 className="w-3 h-3" aria-hidden /> {ev.tenant.organization_name}
+                      </div>
+                    )}
                     <div className="text-sm text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
                       <span className="flex items-center gap-1"><CalendarDays className="w-3.5 h-3.5" />
                         {new Date(ev.start_date).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" })}</span>
@@ -241,6 +318,21 @@ const EventsDashboard = () => {
                         </>
                       )}
                       <Button size="sm" variant="ghost" onClick={() => openEdit(ev)}><Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit</Button>
+                      {(ev.status === "published" || ev.status === "live") && (
+                        <Button size="sm" variant="ghost" onClick={() => setStatus(ev, "draft", "Unpublish")}>
+                          <EyeOff className="w-3.5 h-3.5 mr-1.5" /> Unpublish
+                        </Button>
+                      )}
+                      {isAdmin && ev.status !== "ended" && new Date(ev.end_date || ev.start_date) < new Date() && (
+                        <Button size="sm" variant="ghost" onClick={() => setStatus(ev, "ended", "Mark as ended")}>
+                          <Flag className="w-3.5 h-3.5 mr-1.5" /> Mark ended
+                        </Button>
+                      )}
+                      {ev.status !== "archived" && (
+                        <Button size="sm" variant="ghost" onClick={() => setStatus(ev, "archived", "Archive")}>
+                          <Archive className="w-3.5 h-3.5 mr-1.5" /> Archive
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" className="text-destructive" onClick={() => remove(ev)}>
                         <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
                       </Button>
@@ -261,6 +353,22 @@ const EventsDashboard = () => {
           </DialogHeader>
 
           <div className="space-y-5">
+            {isAdmin && !editing && (
+              <section className="space-y-1.5">
+                <Label htmlFor="org">Organiser</Label>
+                <select id="org" value={tenantId} onChange={(e) => setTenantId(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="">Choose who this event belongs to…</option>
+                  {organisers.map((o) => <option key={o.id} value={o.id}>{o.organization_name}</option>)}
+                </select>
+                <p className="text-xs text-muted-foreground">Ticket money goes to this organiser's wallet.</p>
+              </section>
+            )}
+            {isAdmin && editing && (editing as AdminEvent).tenant && (
+              <p className="text-sm text-muted-foreground flex items-center gap-1">
+                <Building2 className="w-4 h-4" aria-hidden /> {(editing as AdminEvent).tenant!.organization_name}
+              </p>
+            )}
             <section className="space-y-3">
               <div className="space-y-1.5">
                 <Label htmlFor="t">Event title</Label>

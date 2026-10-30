@@ -219,7 +219,7 @@ export default function AdminDashboard() {
                   sub={<span className="text-xs text-muted-foreground">+{g.organisers_new} this period · {g.organisers_onboarded} fully set up</span>} />
                 <Tile label="Organisers selling" value={g.organisers_selling.toLocaleString()} icon={TrendingUp}
                   sub={<span className="text-xs text-muted-foreground">made a sale this period</span>} />
-                <Tile label="Upcoming events" value={g.events_upcoming.toLocaleString()} icon={CalendarDays}
+                <Tile label="Upcoming events" value={g.events_upcoming.toLocaleString()} icon={CalendarDays} to="/events"
                   sub={<span className="text-xs text-muted-foreground">{g.events_this_week} this week · {g.events_drafts} drafts</span>} />
                 <Tile label="Tickets issued" value={g.tickets_sold.toLocaleString()} icon={Ticket} />
                 <Tile label="Check-ins" value={g.checkins.toLocaleString()} icon={ScanLine}

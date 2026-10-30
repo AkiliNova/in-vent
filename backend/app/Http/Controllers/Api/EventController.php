@@ -13,12 +13,20 @@ use Illuminate\Support\Str;
 
 class EventController extends Controller
 {
-    /** Organizer-facing list — the tenant scope handles isolation. */
+    /**
+     * Organizer-facing list — the tenant scope handles isolation. Platform
+     * admins run unscoped, so they see every organiser's events and can
+     * narrow by organiser.
+     */
     public function index(Request $request): JsonResponse
     {
+        $admin = $request->user()->isSuperAdmin();
+
         $events = Event::query()
             ->withCount(['attendees', 'sessions', 'exhibitors'])
             ->with('venue:id,name,city')
+            ->when($admin, fn ($q) => $q->with('tenant:id,organization_name')
+                ->when($request->integer('tenant_id'), fn ($w, $t) => $w->where('tenant_id', $t)))
             ->when($request->string('status')->toString(), fn ($q, $s) => $q->where('status', $s))
             ->when($request->string('search')->toString(), fn ($q, $s) => $q->where('title', 'like', "%{$s}%"))
             ->orderByDesc('start_date')
@@ -54,6 +62,12 @@ class EventController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validated($request);
+
+        // Organisers create for themselves (the tenant scope fills tenant_id);
+        // a platform admin has no organisation and must say whose event it is.
+        if ($request->user()->isSuperAdmin()) {
+            $data['tenant_id'] = $request->validate(['tenant_id' => ['required', 'integer', 'exists:tenants,id']])['tenant_id'];
+        }
 
         $data['slug'] = $this->uniqueSlug($data['title']);
         $event = Event::create($data);
@@ -170,6 +184,12 @@ class EventController extends Controller
             'chatbot_enabled' => ['boolean'],
             'livestream_url' => ['nullable', 'url', 'max:2048'],
             'settings' => ['nullable', 'array'],
+            // Taking an event down. Going live is the publish endpoint's job,
+            // which checks there's something to sell; only platform admins
+            // may set any status directly (e.g. marking an event ended).
+            'status' => ['sometimes', 'in:'.($request->user()->isSuperAdmin()
+                ? 'draft,published,live,ended,archived'
+                : 'draft,archived')],
         ]);
     }
 
