@@ -46,6 +46,9 @@ Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttl
 Route::prefix('public')->group(function () {
     Route::get('events', [EventController::class, 'publicIndex']);
     Route::get('events/{uuid}', [EventController::class, 'publicShow']);
+    // Link previews (WhatsApp, Facebook, X…): served to crawlers via tikooh.com's edge middleware.
+    Route::get('events/{uuid}/share', [\App\Http\Controllers\Api\ShareController::class, 'page']);
+    Route::get('events/{uuid}/share.jpg', [\App\Http\Controllers\Api\ShareController::class, 'image']);
 
     // Registration and checkout
     Route::post('events/{uuid}/register', [AttendeeController::class, 'register'])->middleware('throttle:10,1');

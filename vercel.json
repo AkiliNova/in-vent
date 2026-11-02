@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/og/:uuid.jpg", "destination": "https://tikooh.78.159.110.138.nip.io/api/public/events/:uuid/share.jpg" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }
