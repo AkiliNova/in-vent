@@ -111,9 +111,12 @@ class ShareImage
         }
 
         // Blurred, darkened backdrop: shrink to a few pixels and scale back up.
-        $tiny = imagecreatetruecolor(48, 25);
-        imagecopyresampled($tiny, $cover, 0, 0, 0, (int) ($sh * 0.2), 48, 25, $sw, (int) ($sh * 0.6));
-        imagecopyresampled($canvas, $tiny, 0, 0, 0, 0, self::W, self::H, 48, 25);
+        $tiny = imagecreatetruecolor(240, 126);
+        imagecopyresampled($tiny, $cover, 0, 0, 0, (int) ($sh * 0.2), 240, 126, $sw, (int) ($sh * 0.6));
+        for ($i = 0; $i < 25; $i++) {
+            imagefilter($tiny, IMG_FILTER_GAUSSIAN_BLUR);
+        }
+        imagecopyresampled($canvas, $tiny, 0, 0, 0, 0, self::W, self::H, 240, 126);
         imagedestroy($tiny);
         imagefilledrectangle($canvas, 0, 0, self::W, self::H, imagecolorallocatealpha($canvas, 0, 0, 0, 70));
 
@@ -155,8 +158,8 @@ class ShareImage
             $event->start_date?->copy()->setTimezone($tz)->format('D j M Y · g:i A'),
             $event->location_name ?: $event->city,
         ]);
-        if ($meta) {
-            imagettftext($canvas, 26, 0, 80, $y + 10, $soft, $regular, implode('   ·   ', $meta));
+        foreach (array_values($meta) as $i => $text) {
+            imagettftext($canvas, 26, 0, 80, $y + 10 + $i * 44, $soft, $regular, $this->wrap($text, $regular, 26, self::W - 160, 1)[0]);
         }
 
         imagettftext($canvas, 24, 0, 80, self::H - 50, $white, $bold, 'tikooh');
