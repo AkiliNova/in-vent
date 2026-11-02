@@ -27,8 +27,21 @@ class TicketConfirmation extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "🎟️ You're in — {$this->order->event->title}",
+            subject: $this->fill((string) config('tikooh.templates.ticket_subject')),
         );
+    }
+
+    /** Fills the admin-editable wording (Settings → Templates). */
+    public function fill(string $template): string
+    {
+        $frontend = rtrim((string) config('app.frontend_url'), '/');
+
+        return strtr($template, [
+            '{first_name}' => trim(explode(' ', (string) $this->order->buyer_name)[0]) ?: 'there',
+            '{event}' => $this->order->event->title,
+            '{count}' => (string) $this->tickets->count(),
+            '{link}' => $frontend.'/payment-response?reference='.urlencode($this->order->reference),
+        ]);
     }
 
     public function content(): Content
@@ -39,6 +52,8 @@ class TicketConfirmation extends Mailable
         return new Content(
             view: 'mail.ticket-confirmation',
             with: [
+                'intro' => $this->fill((string) config('tikooh.templates.ticket_intro')),
+                'signoff' => $this->fill((string) config('tikooh.templates.ticket_signoff')),
                 'order' => $this->order,
                 'event' => $event,
                 'tickets' => $this->tickets,

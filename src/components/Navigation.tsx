@@ -5,7 +5,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard, QrCode, ScanLine, Users, Settings,
-  Menu, X, House, LogOut, Tag, Wallet, Ticket, ChevronDown, BookOpen, ShieldCheck, Megaphone
+  Menu, X, House, LogOut, Tag, Wallet, Ticket, ChevronDown, BookOpen, ShieldCheck, Megaphone,
+  UserRound, Inbox, SlidersHorizontal
 } from 'lucide-react';
 import { useAuth } from "@/context/AuthContext";
 
@@ -45,9 +46,14 @@ const Navigation = () => {
     { href: '/admin/organisers', label: 'Organisers', icon: Users },
     { href: '/events',           label: 'Events',     icon: House },
     { href: '/register',         label: 'On-site',    icon: QrCode },
-    { href: '/admin/payouts',    label: 'Payouts',    icon: ShieldCheck },
+    { href: '/scanner',          label: 'Scanner',    icon: ScanLine },
+    { href: '/guests',           label: 'Guests',     icon: UserRound },
+    { href: '/promo-codes',      label: 'Promos',     icon: Tag },
     { href: '/campaigns',        label: 'Campaigns',  icon: Megaphone },
+    { href: '/admin/payouts',    label: 'Payouts',    icon: ShieldCheck },
+    { href: '/admin/messages',   label: 'Messages',   icon: Inbox },
     { href: '/admin/blog',       label: 'Blog',       icon: BookOpen },
+    { href: '/admin/settings',   label: 'Settings',   icon: SlidersHorizontal },
   ] : [
     { href: '/dashboard',    label: 'Dashboard', icon: LayoutDashboard },
     { href: '/events',       label: 'Events',    icon: House },
@@ -158,7 +164,7 @@ const Navigation = () => {
                       }`}
                     >
                       <link.icon className="w-4 h-4 flex-shrink-0" />
-                      <span className="hidden xl:inline">{link.label}</span>
+                      <span className={isSuperAdmin ? "hidden 2xl:inline" : "hidden xl:inline"}>{link.label}</span>
                     </Link>
                   );
                 })}

@@ -17,6 +17,8 @@ use RuntimeException;
  */
 class AdvantaSmsClient
 {
+    use LogsMessages;
+
     /** GSM-7 single segment; longer bodies are billed per 153-char part. */
     protected const SEGMENT_LENGTH = 160;
 
@@ -87,6 +89,8 @@ class AdvantaSmsClient
                 $failed[] = ['destination' => $number, 'error' => 'Delivery failed'];
             }
         }
+
+        $this->logOutcome('advanta', $message, $results, $failed);
 
         return ['sent' => $sent, 'failed' => $failed, 'results' => $results];
     }

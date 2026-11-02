@@ -45,8 +45,7 @@
       You're going to<br><span style="color:#19E6CE;">{{ $event->title }}</span>
     </h1>
     <p style="margin:14px 0 0;font-size:16px;line-height:25px;color:#AEB9CE;">
-      Hi {{ $first }} — your {{ $count === 1 ? 'spot is' : $count.' spots are' }} locked in.
-      Keep this email handy: the QR {{ $count === 1 ? 'code below is' : 'codes below are' }} your way through the door.
+      {{ $intro }}
     </p>
   </td></tr>
 </table>
@@ -205,7 +204,7 @@
 {{-- ── Sign-off ─────────────────────────────────────────────────────── --}}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
   <tr><td class="tk-pad" style="padding:30px 44px 40px;font-family:{{ $font }};font-size:15px;line-height:24px;color:#AEB9CE;">
-    See you there,<br>
+    {{ $signoff }}<br>
     <strong style="color:#FFFFFF;">{{ $event->host ?: config('app.name') }}</strong>
   </td></tr>
 </table>

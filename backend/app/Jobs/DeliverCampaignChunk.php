@@ -5,7 +5,8 @@ namespace App\Jobs;
 use App\Mail\CampaignMail;
 use App\Models\Campaign;
 use App\Models\CampaignRecipient;
-use App\Services\Sms\AdvantaSmsClient;
+use App\Models\MessageLog;
+use App\Services\Sms\Sms;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -52,7 +53,7 @@ class DeliverCampaignChunk implements ShouldQueue
 
     protected function sendSms(Campaign $campaign, $recipients): void
     {
-        $client = new AdvantaSmsClient($campaign->tenant_id);
+        $client = Sms::client($campaign->tenant_id)->about('campaign', 'campaign', $campaign->id);
 
         // Personalise per recipient, so each goes out as its own request.
         foreach ($recipients as $recipient) {
@@ -98,7 +99,13 @@ class DeliverCampaignChunk implements ShouldQueue
                     'error' => $e->getMessage(),
                 ]);
 
-                $recipient->update(['status' => 'failed', 'error' => 'Delivery failed']);
+                $recipient->update(['status' => 'failed', 'error' => mb_substr($e->getMessage(), 0, 500)]);
+
+                MessageLog::record([
+                    'tenant_id' => $campaign->tenant_id, 'channel' => 'email', 'type' => 'campaign',
+                    'to' => $recipient->destination, 'subject' => $campaign->subject ?? $campaign->name, 'status' => 'failed',
+                    'error' => $e->getMessage(), 'related_type' => 'campaign', 'related_id' => $campaign->id,
+                ]);
             }
         }
     }

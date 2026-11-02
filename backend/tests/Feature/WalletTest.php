@@ -326,6 +326,30 @@ class WalletTest extends TestCase
         Http::assertNotSent(fn ($r) => str_contains($r->url(), 'b2c'));
     }
 
+    public function test_the_organiser_is_emailed_at_each_step_and_the_history_shows_it(): void
+    {
+        $this->fakeB2c();
+        $this->sellOneTicket();
+        \App\Models\MessageLog::query()->delete(); // ignore the ticket confirmation
+        $payout = $this->requestPayout(500);
+
+        Sanctum::actingAs($this->admin);
+        $this->postJson("/api/admin/payouts/{$payout->id}/mark-paid", ['receipt' => 'sk12abc'])->assertOk();
+
+        $mails = \App\Models\MessageLog::where('related_type', 'payout')->where('related_id', $payout->id)->orderBy('id')->get();
+        $this->assertSame(['owner@acme.com', 'owner@acme.com'], $mails->pluck('to')->all());
+        $this->assertStringContainsString('received your KES 500', $mails[0]->subject);
+        $this->assertStringContainsString('on its way', $mails[1]->subject);
+        $this->assertStringContainsString('SK12ABC', $mails[1]->body);
+
+        $kinds = collect($this->getJson("/api/admin/payouts/{$payout->id}/history")->assertOk()->json('events'))->pluck('kind');
+        $this->assertSame(['requested', 'approved', 'paid'], $kinds->reject(fn ($k) => in_array($k, ['wallet', 'message'], true))->values()->all());
+        $this->assertSame(2, $kinds->filter(fn ($k) => $k === 'message')->count());
+
+        Sanctum::actingAs($this->organizer);
+        $this->getJson("/api/admin/payouts/{$payout->id}/history")->assertForbidden();
+    }
+
     public function test_only_platform_admins_can_approve(): void
     {
         $this->fakeB2c();

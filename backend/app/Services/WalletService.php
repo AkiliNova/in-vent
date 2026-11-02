@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Mail\PayoutMail;
+use App\Models\MessageLog;
 use App\Models\Order;
 use App\Models\Payout;
 use App\Models\Tenant;
@@ -13,6 +15,7 @@ use App\Support\TenantContext;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -166,6 +169,8 @@ class WalletService
             .'Fund B2C from the paybill, then approve on the admin payouts page.'
         );
 
+        $this->notifyMerchant($payout, 'requested');
+
         return $payout;
     }
 
@@ -233,7 +238,7 @@ class WalletService
     /** The admin paid outside B2C (e.g. while B2C is paused) and records it. */
     public function markPaidManually(Payout $payout, User $admin, string $receipt): Payout
     {
-        return DB::transaction(function () use ($payout, $admin, $receipt) {
+        $paid = DB::transaction(function () use ($payout, $admin, $receipt) {
             $payout = Payout::withoutGlobalScope('tenant')->whereKey($payout->id)->lockForUpdate()->firstOrFail();
 
             if (! in_array($payout->status, ['requested', 'processing'], true)) {
@@ -252,12 +257,20 @@ class WalletService
 
             return $payout;
         });
+
+        $this->notifyMerchant($paid, 'paid');
+
+        return $paid;
     }
 
     /** Admin refuses the request; the money goes back to the wallet. */
     public function rejectWithdrawal(Payout $payout, User $admin, string $reason): Payout
     {
-        return $this->refund($payout, 'rejected', $reason, $admin);
+        $rejected = $this->refund($payout, 'rejected', $reason, $admin);
+
+        $this->notifyMerchant($rejected, 'rejected');
+
+        return $rejected;
     }
 
     /** The merchant withdraws their own request before it is sent. */
@@ -291,6 +304,8 @@ class WalletService
 
                 Telegram::send('✅ Payout #'.$payout->id.' sent — KES '.number_format((float) $payout->net_amount)
                     .' · '.Telegram::e($result['receipt']));
+
+                $this->notifyMerchant($payout, 'paid');
 
                 return $payout;
             }
@@ -359,6 +374,30 @@ class WalletService
         });
     }
 
+
+    /**
+     * Emails the organiser at each step of a withdrawal. A mail failure is
+     * logged (message log) but never undoes the money movement.
+     */
+    protected function notifyMerchant(Payout $payout, string $stage): void
+    {
+        $payout->loadMissing('requester', 'tenant');
+        $to = $payout->requester?->email ?: $payout->tenant?->email;
+
+        if (! $to) {
+            return;
+        }
+
+        try {
+            Mail::to($to)->send(new PayoutMail($payout, $stage));
+        } catch (\Throwable $e) {
+            MessageLog::record([
+                'tenant_id' => $payout->tenant_id, 'channel' => 'email', 'type' => 'payout', 'to' => $to,
+                'subject' => 'Withdrawal '.$stage, 'status' => 'failed', 'error' => $e->getMessage(),
+                'related_type' => 'payout', 'related_id' => $payout->id,
+            ]);
+        }
+    }
 
     public static function maskPhone(string $phone): string
     {

@@ -2,12 +2,10 @@
 
 namespace App\Providers;
 
-use App\Events\TicketsIssued;
-use App\Listeners\SendTicketConfirmation;
+use App\Support\PlatformSettings;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -20,9 +18,14 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Admin-edited settings (Settings page) override .env from here on.
+        PlatformSettings::apply();
+
         $this->configureRateLimiting();
 
-        Event::listen(TicketsIssued::class, SendTicketConfirmation::class);
+        // Listeners in app/Listeners are auto-discovered (SendTicketConfirmation,
+        // LogSentEmail). Registering one here as well runs it twice: buyers got
+        // two confirmation emails and SMS.
 
         // Catches a relation accessed without eager-loading before it reaches
         // production as an N+1 on an attendee list.

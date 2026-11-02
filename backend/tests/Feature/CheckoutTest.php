@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Mail\TicketConfirmation;
 use App\Models\Attendee;
 use App\Models\Event;
 use App\Models\PromoCode;
@@ -11,6 +12,7 @@ use App\Models\TicketTier;
 use App\Services\OrderService;
 use App\Support\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
@@ -73,6 +75,23 @@ class CheckoutTest extends TestCase
             $this->assertNotNull($attendee);
             $this->assertSame(2000.0, (float) $attendee->amount_paid);
         });
+    }
+
+    public function test_a_paid_order_sends_exactly_one_confirmation_email(): void
+    {
+        Mail::fake();
+
+        TenantContext::withoutScoping(function () {
+            $order = $this->orders()->createPendingOrder(
+                $this->event,
+                [['ticket_tier_id' => $this->tier->id, 'quantity' => 1]],
+                ['name' => 'Ada Lovelace', 'email' => 'ada@example.com']
+            );
+
+            $this->orders()->markPaid($order, 'mpesa', ['receipt' => 'ABC123']);
+        });
+
+        Mail::assertSent(TicketConfirmation::class, 1);
     }
 
     public function test_marking_paid_twice_does_not_issue_duplicate_tickets(): void

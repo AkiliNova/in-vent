@@ -27,6 +27,9 @@ class CampaignMail extends Mailable
         public ?string $ctaUrl = null,
         public ?string $unsubscribeUrl = null,
         public ?string $senderName = null,
+        // For the message log (LogSentEmail).
+        public ?int $campaignId = null,
+        public ?int $tenantId = null,
     ) {}
 
     public static function forCampaign(Campaign $campaign, string $subjectLine, string $body, ?string $unsubscribeUrl): self
@@ -40,6 +43,8 @@ class CampaignMail extends Mailable
             ctaUrl: $campaign->cta_url,
             unsubscribeUrl: $unsubscribeUrl,
             senderName: self::senderName($campaign),
+            campaignId: $campaign->id,
+            tenantId: $campaign->tenant_id,
         );
     }
 

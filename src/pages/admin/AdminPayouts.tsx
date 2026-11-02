@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { Loader2, Send, CheckCheck, XCircle, AlertTriangle, Clock, RefreshCw } from "lucide-react";
+import { Loader2, Send, CheckCheck, XCircle, AlertTriangle, Clock, RefreshCw, History, Mail } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,12 +44,27 @@ const dueLabel = (iso: string | null) => {
 
 type Action = { kind: "paid" | "reject"; row: Row } | null;
 
+interface HistoryEvent { at: string | null; kind: string; title: string; detail: string | null; message_id?: number; status?: string }
+
+const DOT: Record<string, string> = {
+  requested: "bg-yellow-500", approved: "bg-sky-500", paid: "bg-success", rejected: "bg-destructive",
+  cancelled: "bg-muted-foreground", wallet: "bg-violet-400", message: "bg-primary", note: "bg-muted-foreground",
+};
+
 export default function AdminPayouts() {
   const { user } = useAuth();
   const [data, setData] = useState<Data | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [action, setAction] = useState<Action>(null);
   const [input, setInput] = useState("");
+  const [history, setHistory] = useState<{ row: Row; events: HistoryEvent[] | null } | null>(null);
+
+  const openHistory = (row: Row) => {
+    setHistory({ row, events: null });
+    api.get<{ events: HistoryEvent[] }>(`admin/payouts/${row.id}/history`)
+      .then((r) => setHistory({ row, events: r.events }))
+      .catch((e) => { setHistory(null); toast({ title: "Couldn't load history", description: errorMessage(e), variant: "destructive" }); });
+  };
 
   const load = () => api.get<Data>("admin/payouts").then(setData).catch((e) =>
     toast({ title: "Couldn't load payouts", description: errorMessage(e), variant: "destructive" }));
@@ -157,6 +172,7 @@ export default function AdminPayouts() {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex flex-wrap gap-1.5 justify-end">
+                                <Button size="sm" variant="ghost" aria-label={`History of #${r.id}`} onClick={() => openHistory(r)}><History className="w-3.5 h-3.5" /></Button>
                                 {r.status === "requested" && (
                                   <Button size="sm" disabled={busyId === r.id} onClick={() => approve(r)}>
                                     {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}Send by B2C
@@ -185,8 +201,8 @@ export default function AdminPayouts() {
                   <h2 className="px-5 pt-4 font-semibold text-foreground">Recent</h2>
                   <ul className="divide-y divide-border text-sm">
                     {data.recent.map((r) => (
-                      <li key={r.id} className="px-5 py-2.5 flex flex-wrap justify-between gap-2">
-                        <span className="text-foreground">#{r.id} {r.tenant?.organization_name} · {kes(r.net_amount)}</span>
+                      <li key={r.id} className="px-5 py-2.5 flex flex-wrap items-center justify-between gap-2 hover:bg-muted/40 cursor-pointer" onClick={() => openHistory(r)}>
+                        <span className="text-foreground flex items-center gap-2"><History className="w-3.5 h-3.5 text-muted-foreground" />#{r.id} {r.tenant?.organization_name} · {kes(r.net_amount)}</span>
                         <span className="text-muted-foreground">{r.status}{r.mpesa_receipt ? ` · ${r.mpesa_receipt}` : ""}{r.payment_method ? ` · ${r.payment_method}` : ""}{r.paid_at ? ` · ${new Date(r.paid_at).toLocaleString("en-KE")}` : ""}</span>
                       </li>
                     ))}
@@ -197,6 +213,35 @@ export default function AdminPayouts() {
           )}
         </div>
       </main>
+
+      <Dialog open={!!history} onOpenChange={(o) => !o && setHistory(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Withdrawal #{history?.row.id} · {kes(history?.row.net_amount)}</DialogTitle>
+            <DialogDescription>{history?.row.tenant?.organization_name} → {history?.row.destination_account}</DialogDescription>
+          </DialogHeader>
+          {!history?.events ? (
+            <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+          ) : (
+            <ol className="relative my-2 space-y-5 border-l border-border pl-6">
+              {history.events.map((e, i) => (
+                <li key={i} className="relative">
+                  <span className={`absolute -left-[29px] top-1.5 h-2.5 w-2.5 rounded-full ring-4 ring-background ${e.status === "failed" ? "bg-destructive" : DOT[e.kind] ?? "bg-muted-foreground"}`} />
+                  <div className="flex items-start gap-2">
+                    {e.kind === "message" && <Mail className="w-3.5 h-3.5 mt-0.5 text-primary flex-shrink-0" />}
+                    <div className="min-w-0">
+                      <div className={`text-sm font-medium ${e.status === "failed" ? "text-destructive" : "text-foreground"}`}>{e.title}</div>
+                      {e.detail && <div className="text-xs text-muted-foreground break-words">{e.detail}</div>}
+                      {e.at && <div className="text-[11px] text-muted-foreground/70 mt-0.5">{new Date(e.at).toLocaleString("en-KE", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</div>}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+          <p className="text-xs text-muted-foreground">Open any email in full under <a href="/admin/messages" className="text-primary hover:underline">Messages</a>.</p>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!action} onOpenChange={(o) => !o && setAction(null)}>
         <DialogContent>

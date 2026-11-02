@@ -7,8 +7,10 @@ use App\Http\Controllers\Api\AttendeeController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BadgeController;
 use App\Http\Controllers\Api\BlogController;
+use App\Http\Controllers\Api\AdminSettingsController;
 use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\ContactController;
+use App\Http\Controllers\Api\MessageLogController;
 use App\Http\Controllers\Api\ChatbotController;
 use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\CheckoutController;
@@ -312,6 +314,13 @@ Route::middleware('auth:sanctum')->group(function () {
     // ── Platform staff ──────────────────────────────────────────────────────
     Route::middleware('role:super_admin')->prefix('admin')->group(function () {
         Route::get('overview', [DashboardController::class, 'platform']);
+        Route::get('messages', [MessageLogController::class, 'index']);
+        Route::get('messages/{message}', [MessageLogController::class, 'show'])->whereNumber('message');
+        Route::get('payouts/{payout}/history', [MessageLogController::class, 'payoutHistory'])->whereNumber('payout');
+        Route::get('settings', [AdminSettingsController::class, 'index']);
+        Route::put('settings', [AdminSettingsController::class, 'update']);
+        Route::post('settings/test/{channel}', [AdminSettingsController::class, 'test'])->whereIn('channel', ['email', 'sms', 'telegram'])->middleware('throttle:10,1');
+        Route::get('templates/{template}/preview', [AdminSettingsController::class, 'preview'])->whereIn('template', ['ticket', 'campaign']);
         Route::get('dashboard', [AdminController::class, 'overview']);
         Route::get('organisers', [AdminController::class, 'organisers']);
         Route::put('organisers/{tenant}', [AdminController::class, 'updateOrganiser'])->whereNumber('tenant');

@@ -22,6 +22,8 @@ import Payouts from "./pages/Payouts";
 import BusinessSettings from "./pages/BusinessSettings";
 import Help from "./pages/Help";
 import AdminPayouts from "./pages/admin/AdminPayouts";
+import AdminSettings from "./pages/admin/AdminSettings";
+import AdminMessages from "./pages/admin/AdminMessages";
 import Blog from "./pages/Blog";
 import BlogPost from "./pages/BlogPost";
 import BlogManager from "./pages/admin/BlogManager";
@@ -73,6 +75,8 @@ const App = () => (
           <Route path="/admin" element={<P><AdminDashboard /></P>} />
           <Route path="/admin/organisers" element={<P><AdminOrganisers /></P>} />
           <Route path="/admin/payouts" element={<P><AdminPayouts /></P>} />
+          <Route path="/admin/settings" element={<P><AdminSettings /></P>} />
+          <Route path="/admin/messages" element={<P><AdminMessages /></P>} />
           <Route path="/admin/blog" element={<P><BlogManager /></P>} />
 
           <Route path="*" element={<NotFound />} />

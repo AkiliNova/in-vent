@@ -515,3 +515,6 @@ Artisan::command('tikooh:send-logs {--date=}', function () {
         \App\Jobs\SendCampaign::dispatch($campaign);
     });
 })->name('tikooh:due-campaigns')->everyMinute()->withoutOverlapping();
+
+// Message log bodies are kept a year (MessageLog::prunable).
+\Illuminate\Support\Facades\Schedule::command('model:prune', ['--model' => [\App\Models\MessageLog::class]])->daily();

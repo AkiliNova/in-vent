@@ -307,7 +307,7 @@ class CampaignController extends Controller
             return 0.0;
         }
 
-        $perSegment = (float) config('services.advanta.cost_per_segment', 0.80);
+        $perSegment = (float) (config('services.sms.cost_per_segment') ?? config('services.advanta.cost_per_segment', 0.80));
 
         return round($recipients * AdvantaSmsClient::segmentCount((string) $campaign->body) * $perSegment, 2);
     }
