@@ -17,7 +17,7 @@ const categories = [
     faqs: [
       {
         q: 'How do I buy a ticket?',
-        a: 'Browse events on the Events page, select the ticket tier you want, fill in your details, and pay via M-Pesa, Visa, or Mastercard through PesaPal. You\'ll receive a PDF ticket by email instantly.',
+        a: 'Browse events on the Events page, select the ticket tier you want, fill in your details, and pay with M-Pesa: approve the prompt on your phone. Your QR ticket arrives by email and SMS straight away.',
       },
       {
         q: 'How do I get my ticket after payment?',
@@ -41,11 +41,11 @@ const categories = [
     faqs: [
       {
         q: 'What payment methods are accepted?',
-        a: 'We accept M-Pesa (STK push), Visa, and Mastercard. All payments are processed securely through PesaPal.',
+        a: 'M-Pesa. At checkout you get a prompt on your phone; enter your PIN and you\x27re done.',
       },
       {
         q: 'Is my payment information secure?',
-        a: 'Yes. We never store your card details. All payment data is handled directly by PesaPal which is PCI-DSS compliant.',
+        a: 'Yes. Payment happens on your phone through Safaricom M-Pesa. We never see or store your M-Pesa PIN.',
       },
       {
         q: 'Can I get a refund?',
@@ -85,11 +85,11 @@ const categories = [
       },
       {
         q: 'When do I receive my payouts?',
-        a: 'Payouts are processed after your event. You can view a full breakdown (gross revenue, platform fee, net payout) on the Payouts page. Contact us to initiate a withdrawal.',
+        a: 'Sales land in your Wallet as they happen, with every sale and fee itemised. Request a withdrawal any time (from KES 10) and it is sent to your M-Pesa within 24 hours.',
       },
       {
         q: 'What is the platform fee?',
-        a: 'We charge a 10% platform fee on each ticket sold. If you\'re on the Organizer plan (KES 2,500/month), the fee drops to 5%.',
+        a: '10% of each ticket sold online, taken before the money reaches your wallet. Buyers pay the price you set. Free events, cash at the gate and complimentary tickets are never charged. No monthly or setup fees.',
       },
       {
         q: 'Can I create discount codes?',
@@ -97,7 +97,7 @@ const categories = [
       },
       {
         q: 'How do I send a message to my guests?',
-        a: 'Use the Campaigns page to send bulk SMS to all guests, checked-in attendees, pending guests, or VIPs. You can also message specific guests from the Guests page.',
+        a: 'Use the Campaigns page to email or SMS the guests of one event, or everyone who has ever been to your events, including guest lists you import. Add an event card with a Get tickets button, send yourself a test, then send now or schedule it.',
       },
     ],
   },

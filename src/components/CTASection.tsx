@@ -1,50 +1,41 @@
-import { Button } from '@/components/ui/button';
-import { ArrowRight, Zap } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-const CTASection = () => {
-  return (
-    <section className="py-24 relative overflow-hidden">
-      {/* Background effects */}
-      <div className="absolute inset-0 bg-gradient-to-b from-background via-primary/5 to-background" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/10 rounded-full blur-3xl" />
+const CTASection = () => (
+  <section className="relative px-6 py-24">
+    <div className="container mx-auto">
+      <div className="relative mx-auto max-w-5xl overflow-hidden rounded-[36px] border border-white/10 bg-[#0b0b22] px-8 py-16 text-center md:px-16 md:py-20">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -left-20 -top-24 h-80 w-80 rounded-full bg-[#F32B81]/25 blur-[100px]" />
+          <div className="absolute -bottom-24 -right-16 h-80 w-80 rounded-full bg-[#3ED2D1]/20 blur-[100px]" />
+          <div className="absolute inset-0 opacity-[0.05]"
+            style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '22px 22px' }} />
+        </div>
 
-      <div className="container mx-auto px-6 relative z-10">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm mb-8">
-            <Zap className="w-4 h-4" />
-            Ready to sell your event?
-          </div>
-
-          <h2 className="text-4xl md:text-6xl font-display font-bold text-foreground mb-6">
-            Stop the clipboard chaos.{' '}
-            <span className="gradient-text">Start today.</span>
+        <div className="relative">
+          <h2 className="font-display text-4xl font-bold leading-tight text-white md:text-6xl">
+            Your next event
+            <br />
+            <span className="bg-gradient-to-r from-[#F32B81] via-[#FF7AB6] to-[#F8D21F] bg-clip-text text-transparent">deserves a full house.</span>
           </h2>
-
-          <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-            Join event organizers across Kenya who've made the switch.
-            Setup takes minutes, not days.
+          <p className="mx-auto mt-6 max-w-xl text-lg text-white/60">
+            Set up in minutes. Sell with M-Pesa tonight. Get paid within 24 hours.
           </p>
 
-          <div className="flex flex-wrap justify-center gap-4">
-            <Button variant="hero" size="xl" asChild>
-              <Link to="/onboarding">
-                Create Your Event
-                <ArrowRight className="w-5 h-5" />
-              </Link>
-            </Button>
-            <Button variant="heroOutline" size="xl" asChild>
-              <Link to="/search-events">Browse Events</Link>
-            </Button>
+          <div className="mt-10 flex flex-wrap justify-center gap-3">
+            <Link to="/onboarding" className="inline-flex items-center gap-2 rounded-xl bg-[#F32B81] px-7 py-3.5 font-semibold text-white shadow-lg shadow-[#F32B81]/30 transition hover:bg-[#E02575]">
+              Create your event <ArrowRight className="h-5 w-5" />
+            </Link>
+            <Link to="/search-events" className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-7 py-3.5 font-semibold text-white transition hover:bg-white/10">
+              Find something to do
+            </Link>
           </div>
 
-          <p className="text-sm text-muted-foreground mt-8">
-            Free to list • Only 10% platform fee on ticket sales • Cancel anytime
-          </p>
+          <p className="mt-8 text-sm text-white/40">Free to list · 10% only when you sell · No contracts</p>
         </div>
       </div>
-    </section>
-  );
-};
+    </div>
+  </section>
+);
 
 export default CTASection;

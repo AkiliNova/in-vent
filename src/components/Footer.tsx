@@ -72,8 +72,6 @@ const socials = [
 
 const paymentBadges = [
   { label: 'M-Pesa', color: 'bg-green-500' },
-  { label: 'Visa', color: 'bg-blue-600' },
-  { label: 'Mastercard', color: 'bg-orange-500' },
 ];
 
 export default function Footer() {

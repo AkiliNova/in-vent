@@ -162,6 +162,12 @@
   to { opacity: 1; }
 }
 
+/* Hero carousel progress bar. */
+@keyframes grow {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
 /* Scanner result overlay: a ring that draws itself, then the tick/cross. */
 .scan-ring {
   stroke-dasharray: 166;
