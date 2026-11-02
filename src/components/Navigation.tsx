@@ -5,7 +5,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   LayoutDashboard, QrCode, ScanLine, Users, Settings,
-  Menu, X, House, LogOut, Tag, Wallet, Ticket, ChevronDown, BookOpen, ShieldCheck
+  Menu, X, House, LogOut, Tag, Wallet, Ticket, ChevronDown, BookOpen, ShieldCheck, Megaphone
 } from 'lucide-react';
 import { useAuth } from "@/context/AuthContext";
 
@@ -46,6 +46,7 @@ const Navigation = () => {
     { href: '/events',           label: 'Events',     icon: House },
     { href: '/register',         label: 'On-site',    icon: QrCode },
     { href: '/admin/payouts',    label: 'Payouts',    icon: ShieldCheck },
+    { href: '/campaigns',        label: 'Campaigns',  icon: Megaphone },
     { href: '/admin/blog',       label: 'Blog',       icon: BookOpen },
   ] : [
     { href: '/dashboard',    label: 'Dashboard', icon: LayoutDashboard },
@@ -54,6 +55,7 @@ const Navigation = () => {
     { href: '/scanner',      label: 'Scanner',   icon: ScanLine },
     { href: '/guests',       label: 'Guests',    icon: Users },
     { href: '/promo-codes',  label: 'Promos',    icon: Tag },
+    { href: '/campaigns',    label: 'Campaigns', icon: Megaphone },
     { href: '/payouts',      label: 'Wallet',    icon: Wallet },
     { href: '/settings',     label: 'Business',  icon: Settings },
   ];

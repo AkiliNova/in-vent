@@ -75,12 +75,20 @@ class DeliverCampaignChunk implements ShouldQueue
 
     protected function sendEmail(Campaign $campaign, $recipients): void
     {
-        foreach ($recipients as $recipient) {
+        $campaign->loadMissing('featuredEvent', 'tenant');
+
+        foreach ($recipients as $i => $recipient) {
+            // Resend allows ~2 requests a second; stay under it.
+            if ($i > 0) {
+                usleep(600_000);
+            }
+
             try {
-                Mail::to($recipient->destination)->send(new CampaignMail(
+                Mail::to($recipient->destination)->send(CampaignMail::forCampaign(
+                    $campaign,
                     subjectLine: $this->personalise($campaign->subject ?? $campaign->name, $recipient),
                     body: $this->personalise($campaign->body, $recipient),
-                    imagePath: $campaign->image_path,
+                    unsubscribeUrl: CampaignMail::unsubscribeUrl($recipient),
                 ));
 
                 $recipient->update(['status' => 'sent', 'sent_at' => now()]);
@@ -98,11 +106,13 @@ class DeliverCampaignChunk implements ShouldQueue
     protected function personalise(string $text, CampaignRecipient $recipient): string
     {
         $attendee = $recipient->attendee;
+        $first = $recipient->first_name ?: $attendee?->first_name;
+        $last = $recipient->last_name ?: $attendee?->last_name;
 
         return strtr($text, [
-            '{{first_name}}' => $attendee?->first_name ?? 'there',
-            '{{last_name}}' => $attendee?->last_name ?? '',
-            '{{name}}' => $attendee?->full_name ?? 'there',
+            '{{first_name}}' => $first ?: 'there',
+            '{{last_name}}' => $last ?? '',
+            '{{name}}' => trim($first.' '.$last) ?: 'there',
             '{{company}}' => $attendee?->company ?? '',
             '{{category}}' => $attendee?->category ?? '',
         ]);

@@ -504,3 +504,14 @@ Artisan::command('tikooh:send-logs {--date=}', function () {
 })->purpose("Send a day's Laravel log to the ops Telegram chat");
 
 \Illuminate\Support\Facades\Schedule::command('tikooh:send-logs')->dailyAt('00:10');
+
+/*
+ * Scheduled campaigns. Marked "queued" before dispatch so the next tick
+ * doesn't queue them again; SendCampaign claims them atomically anyway.
+ */
+\Illuminate\Support\Facades\Schedule::call(function () {
+    \App\Models\Campaign::withoutGlobalScope('tenant')->due()->get()->each(function ($campaign) {
+        $campaign->update(['status' => 'queued']);
+        \App\Jobs\SendCampaign::dispatch($campaign);
+    });
+})->name('tikooh:due-campaigns')->everyMinute()->withoutOverlapping();

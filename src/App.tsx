@@ -26,11 +26,12 @@ import Blog from "./pages/Blog";
 import BlogPost from "./pages/BlogPost";
 import BlogManager from "./pages/admin/BlogManager";
 import PromoCodes from "./pages/PromoCodes";
+import Campaigns from "./pages/Campaigns";
 import Registration from "./pages/Registration";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminOrganisers from "./pages/admin/AdminOrganisers";
 
-// Not yet moved off Firebase, so not routed: Campaigns, Rooms,
+// Not yet moved off Firebase, so not routed: Rooms,
 // RegistrationFields, AgendaManager, SuperAdmin (replaced by /admin).
 // The API already has endpoints for most of them.
 
@@ -67,6 +68,7 @@ const App = () => (
           <Route path="/wallet" element={<P><Payouts /></P>} />
           <Route path="/settings" element={<P><BusinessSettings /></P>} />
           <Route path="/promo-codes" element={<P><PromoCodes /></P>} />
+          <Route path="/campaigns" element={<P><Campaigns /></P>} />
           <Route path="/register" element={<P><Registration /></P>} />
           <Route path="/admin" element={<P><AdminDashboard /></P>} />
           <Route path="/admin/organisers" element={<P><AdminOrganisers /></P>} />

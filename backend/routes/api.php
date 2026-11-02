@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BadgeController;
 use App\Http\Controllers\Api\BlogController;
 use App\Http\Controllers\Api\CampaignController;
+use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\ChatbotController;
 use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\CheckoutController;
@@ -89,6 +90,12 @@ Route::post('webhooks/mpesa', [PaymentWebhookController::class, 'mpesa'])->name(
 Route::post('webhooks/telegram', TelegramWebhookController::class)->name('webhooks.telegram')->middleware('throttle:60,1');
 
 // Registered with Safaricom, which rejects any URL containing "mpesa" — hence "daraja".
+// Campaign email footer / List-Unsubscribe. Signed per recipient; no login.
+Route::get('unsubscribe/{recipient}', [CampaignController::class, 'unsubscribePage'])
+    ->middleware(['signed:relative', 'throttle:30,1'])->name('campaign.unsubscribe');
+Route::post('unsubscribe/{recipient}', [CampaignController::class, 'unsubscribeConfirm'])
+    ->middleware(['signed:relative', 'throttle:30,1']);
+
 Route::prefix('webhooks/daraja')->withoutMiddleware(ThrottleRequests::class.':api')->group(function () {
     Route::post('c2b/{token}/validate', [DarajaCallbackController::class, 'c2bValidate'])->name('webhooks.daraja.c2b.validate');
     Route::post('c2b/{token}/confirm', [DarajaCallbackController::class, 'c2bConfirm'])->name('webhooks.daraja.c2b.confirm');
@@ -285,12 +292,21 @@ Route::middleware('auth:sanctum')->group(function () {
         // Campaigns (feature 2)
         Route::get('campaigns', [CampaignController::class, 'index']);
         Route::post('campaigns', [CampaignController::class, 'store']);
+        Route::post('campaigns/audience', [CampaignController::class, 'audience']);
+        Route::post('campaigns/image', [CampaignController::class, 'uploadImage']);
         Route::put('campaigns/{campaign}', [CampaignController::class, 'update']);
+        Route::delete('campaigns/{campaign}', [CampaignController::class, 'destroy']);
         Route::get('campaigns/{campaign}/preview', [CampaignController::class, 'preview']);
+        Route::post('campaigns/{campaign}/test', [CampaignController::class, 'test'])->middleware('throttle:10,1');
         Route::post('campaigns/{campaign}/send', [CampaignController::class, 'send']);
         Route::post('campaigns/{campaign}/schedule', [CampaignController::class, 'schedule']);
         Route::post('campaigns/{campaign}/cancel', [CampaignController::class, 'cancel']);
         Route::get('campaigns/{campaign}/report', [CampaignController::class, 'report']);
+
+        // Imported past guests (campaign audience)
+        Route::get('contacts', [ContactController::class, 'index']);
+        Route::post('contacts/import', [ContactController::class, 'import'])->middleware('throttle:10,1');
+        Route::delete('contacts/{contact}', [ContactController::class, 'destroy']);
     });
 
     // ── Platform staff ──────────────────────────────────────────────────────

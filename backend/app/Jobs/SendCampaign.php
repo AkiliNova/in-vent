@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Campaign;
 use App\Models\CampaignRecipient;
-use App\Models\Suppression;
+use App\Services\CampaignAudience;
 use App\Services\Sms\AdvantaSmsClient;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -26,53 +26,52 @@ class SendCampaign implements ShouldQueue
 
     public function handle(): void
     {
-        $campaign = $this->campaign->fresh();
+        // Claim the campaign atomically: a double-clicked Send, or the
+        // scheduler firing while a send is queued, must not deliver twice.
+        $claimed = Campaign::withoutGlobalScope('tenant')
+            ->whereKey($this->campaign->id)
+            ->whereIn('status', ['draft', 'scheduled', 'queued'])
+            ->update(['status' => 'sending', 'started_at' => now()]);
 
-        if (! in_array($campaign->status, ['draft', 'scheduled'], true)) {
+        if ($claimed === 0) {
             return;
         }
 
-        $campaign->update(['status' => 'sending', 'started_at' => now()]);
+        $campaign = Campaign::withoutGlobalScope('tenant')->find($this->campaign->id);
 
-        $field = $campaign->channel === 'email' ? 'email' : 'phone';
         $segments = $campaign->channel === 'sms'
             ? AdvantaSmsClient::segmentCount($campaign->body)
             : 1;
 
         $queued = 0;
-
-        $campaign->audienceQuery()->chunkById(500, function ($attendees) use ($campaign, $field, $segments, &$queued) {
-            $rows = [];
-
-            foreach ($attendees as $attendee) {
-                $destination = $campaign->channel === 'sms'
-                    ? AdvantaSmsClient::normalise($attendee->{$field} ?? '')
-                    : strtolower(trim($attendee->{$field} ?? ''));
-
-                if (! $destination) {
-                    continue;
-                }
-
-                if (Suppression::blocks($campaign->tenant_id, $campaign->channel, $destination)) {
-                    continue;
-                }
-
-                $rows[] = [
-                    'campaign_id' => $campaign->id,
-                    'attendee_id' => $attendee->id,
-                    'destination' => $destination,
-                    'status' => 'queued',
-                    'segments' => $segments,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-
+        $rows = [];
+        $flush = function () use (&$rows, &$queued) {
             if ($rows !== []) {
                 CampaignRecipient::insert($rows);
                 $queued += count($rows);
+                $rows = [];
             }
-        });
+        };
+
+        foreach (CampaignAudience::each($campaign) as $person) {
+            $rows[] = [
+                'campaign_id' => $campaign->id,
+                'attendee_id' => $person['attendee_id'],
+                'destination' => $person['destination'],
+                'first_name' => $person['first_name'],
+                'last_name' => $person['last_name'],
+                'status' => 'queued',
+                'segments' => $segments,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+
+            if (count($rows) >= 500) {
+                $flush();
+            }
+        }
+
+        $flush();
 
         $campaign->update(['recipient_count' => $queued]);
 
@@ -82,11 +81,13 @@ class SendCampaign implements ShouldQueue
             return;
         }
 
-        // Chunked so one provider hiccup fails a batch of 100, not the whole send.
+        // Chunked so one provider hiccup fails a small batch, not the whole
+        // send. Email chunks are small because they are paced to the mail
+        // provider's rate limit and must finish well inside the worker timeout.
         $jobs = CampaignRecipient::where('campaign_id', $campaign->id)
             ->where('status', 'queued')
             ->pluck('id')
-            ->chunk(100)
+            ->chunk($campaign->channel === 'email' ? 25 : 100)
             ->map(fn ($ids) => new DeliverCampaignChunk($campaign->id, $ids->all()))
             ->all();
 
@@ -108,6 +109,6 @@ class SendCampaign implements ShouldQueue
 
     public function failed(\Throwable $e): void
     {
-        $this->campaign->fresh()?->update(['status' => 'failed']);
+        Campaign::withoutGlobalScope('tenant')->find($this->campaign->id)?->update(['status' => 'failed']);
     }
 }

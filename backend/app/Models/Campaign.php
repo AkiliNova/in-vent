@@ -37,6 +37,12 @@ class Campaign extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** The event the email showcases ("New event: get tickets"), not the audience. */
+    public function featuredEvent(): BelongsTo
+    {
+        return $this->belongsTo(Event::class, 'featured_event_id');
+    }
+
     public function recipients(): HasMany
     {
         return $this->hasMany(CampaignRecipient::class);
@@ -47,42 +53,9 @@ class Campaign extends Model
         return $query->where('status', 'scheduled')->where('scheduled_for', '<=', now());
     }
 
-    /**
-     * Resolves audience_filter into the attendees this campaign will reach.
-     * Only whitelisted keys are honoured so a stored filter cannot be used to
-     * pivot into another tenant's data.
-     */
-    public function audienceQuery(): Builder
+    /** Who this campaign reaches — see CampaignAudience. */
+    public function audienceCount(): int
     {
-        $query = Attendee::query()->where('tenant_id', $this->tenant_id);
-
-        if ($this->event_id) {
-            $query->where('event_id', $this->event_id);
-        }
-
-        $filter = $this->audience_filter ?? [];
-
-        foreach (['category', 'status'] as $key) {
-            if (! empty($filter[$key])) {
-                $query->whereIn($key, (array) $filter[$key]);
-            }
-        }
-
-        if (! empty($filter['ticket_tier_id'])) {
-            $query->whereHas('tickets', fn ($q) => $q
-                ->whereIn('ticket_tier_id', (array) $filter['ticket_tier_id']));
-        }
-
-        if (! empty($filter['checked_in'])) {
-            $query->whereNotNull('checked_in_at');
-        }
-
-        if ($this->channel === 'email') {
-            $query->whereNotNull('email');
-        } else {
-            $query->whereNotNull('phone');
-        }
-
-        return $query;
+        return \App\Services\CampaignAudience::count($this);
     }
 }
