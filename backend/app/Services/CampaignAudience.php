@@ -105,7 +105,7 @@ class CampaignAudience
 
         $email = strtolower(trim($raw));
 
-        return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : null;
+        return filter_var($email, FILTER_VALIDATE_EMAIL) && ! Attendee::isPlaceholderEmail($email) ? $email : null;
     }
 
     /**

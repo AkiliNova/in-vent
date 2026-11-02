@@ -129,4 +129,13 @@ class Attendee extends Model
     {
         return $this->checked_in_at !== null;
     }
+
+    /**
+     * Walk-ins and imported guests without an email get a placeholder address
+     * (the column is required). Nothing should ever be sent to one.
+     */
+    public static function isPlaceholderEmail(?string $email): bool
+    {
+        return (bool) preg_match('/@(door|import)\.tikooh\.com$/i', (string) $email);
+    }
 }

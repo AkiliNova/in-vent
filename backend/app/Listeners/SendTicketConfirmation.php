@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Events\TicketsIssued;
 use App\Jobs\GenerateBadge;
 use App\Mail\TicketConfirmation;
+use App\Models\Attendee;
 use App\Models\MessageLog;
 use App\Models\Suppression;
 use App\Services\Sms\AdvantaSmsClient;
@@ -25,7 +26,8 @@ class SendTicketConfirmation implements ShouldQueue
         $order = $event->order;
         $attendee = $event->attendee;
 
-        try {
+        // Walk-ins without an email have a placeholder address; the SMS below reaches them.
+        if (! Attendee::isPlaceholderEmail($order->buyer_email)) try {
             Mail::to($order->buyer_email)->send(new TicketConfirmation(
                 order: $order->loadMissing('event', 'items'),
                 tickets: $event->tickets,

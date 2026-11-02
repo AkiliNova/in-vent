@@ -51,6 +51,9 @@ class CampaignTest extends TestCase
             $this->attend($this->party, 'Ada', 'ada@example.com');
             $this->attend($this->party, 'Grace', 'grace@example.com');
             $this->attend($this->party, 'Gone', 'gone@example.com');
+            // Walk-in / imported guests without email: never emailed.
+            $this->attend($this->party, 'Walkin', 'guest+20261102@door.tikooh.com');
+            $this->attend($this->party, 'Imported', '254712000000@import.tikooh.com');
             $this->attend($elsewhere, 'Linus', 'linus@example.com');
 
             Contact::create(['tenant_id' => $this->acme->id, 'email' => 'old@guest.com', 'first_name' => 'Olive']);
