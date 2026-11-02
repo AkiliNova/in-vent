@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
@@ -179,10 +180,21 @@ export default function PublicEvent() {
       <Navigation />
       <main className="pt-20 pb-16">
         {event.cover_url && (
-          // Generated covers carry the title as text, so show them whole
-          // rather than cropping like a photo.
-          <div className={`w-full overflow-hidden ${event.cover_url.endsWith(".svg") ? "bg-[#0b1020] h-56 md:h-[420px]" : "h-56 md:h-80"}`}>
-            <img src={event.cover_url} alt="" className={`w-full h-full ${event.cover_url.endsWith(".svg") ? "object-contain" : "object-cover"}`} />
+          // Posters carry the details as text, so always show the whole image
+          // over a blurred copy of itself; tap to open it full size.
+          <div className="relative w-full overflow-hidden bg-[#0b1020]">
+            <img src={event.cover_url} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-50" />
+            <Dialog>
+              <DialogTrigger asChild>
+                <button type="button" className="relative block mx-auto py-4 md:py-8 cursor-zoom-in" title="View full image">
+                  <img src={event.cover_url} alt={event.title} className="max-h-[75vh] w-auto max-w-full mx-auto object-contain rounded-lg shadow-2xl" />
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-w-[95vw] w-auto p-2 bg-black/95 border-0">
+                <DialogTitle className="sr-only">{event.title}</DialogTitle>
+                <img src={event.cover_url} alt={event.title} className="max-h-[90vh] max-w-full w-auto mx-auto object-contain" />
+              </DialogContent>
+            </Dialog>
           </div>
         )}
         <div className="container mx-auto px-4 max-w-5xl grid md:grid-cols-5 gap-8 mt-8">
