@@ -45,6 +45,16 @@ class CheckInService
         ) {
             [$ticket, $attendee] = $this->resolve($event, $code, $method);
 
+            // Two doors scanning the same ticket at once must not both get in:
+            // hold the attendee row until this scan is recorded, then re-read it
+            // so the second scan sees the first one's check-in.
+            if ($attendee) {
+                $attendee = Attendee::withoutGlobalScope('tenant')
+                    ->whereKey($attendee->id)
+                    ->lockForUpdate()
+                    ->first();
+            }
+
             $result = $this->evaluate($event, $ticket, $attendee, $direction, $sessionId);
 
             $checkIn = CheckIn::create([

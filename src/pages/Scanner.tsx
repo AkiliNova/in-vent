@@ -25,9 +25,17 @@ export default function Scanner() {
   const [history, setHistory] = useState<ScanResult[]>([]);
   const [manual, setManual] = useState("");
   const [camError, setCamError] = useState<string | null>(null);
+  const [overlay, setOverlay] = useState<ScanResult | null>(null);
   const scanner = useRef<Html5Qrcode | null>(null);
-  // The camera reports the same code many times a second; ignore repeats.
-  const recent = useRef<{ code: string; at: number }>({ code: "", at: 0 });
+  const eventRef = useRef(eventId);
+  eventRef.current = eventId;
+  // One scan at a time: the camera is paused while a result is on screen.
+  const busy = useRef(false);
+  const dismissTimer = useRef<number>();
+  // A ticket held up to the lens keeps decoding after the overlay closes.
+  // Ignore a code the camera already handled for a while, so the green tick
+  // isn't immediately replaced by "already checked in".
+  const seen = useRef(new Map<string, number>());
 
   useEffect(() => {
     api.get<{ data: EventItem[] }>("events?per_page=100").then((r) => {
@@ -39,17 +47,32 @@ export default function Scanner() {
         if (next) setEventId(next.uuid);
       }
     });
-    return () => { scanner.current?.stop().catch(() => {}); };
+    return () => {
+      window.clearTimeout(dismissTimer.current);
+      scanner.current?.stop().catch(() => {});
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const dismiss = () => {
+    window.clearTimeout(dismissTimer.current);
+    setOverlay(null);
+    try { scanner.current?.resume(); } catch { /* not paused */ }
+    busy.current = false;
+  };
+
   const submit = async (code: string, method: "qr" | "manual") => {
+    if (busy.current || !code || !eventRef.current) return;
     const now = Date.now();
-    if (code === recent.current.code && now - recent.current.at < 4000) return;
-    recent.current = { code, at: now };
+    if (method === "qr") {
+      if (now - (seen.current.get(code) ?? 0) < 15_000) return;
+      seen.current.set(code, now);
+    }
+    busy.current = true;
+    try { scanner.current?.pause(true); } catch { /* not running */ }
 
     let res: ScanResult;
     try {
-      res = { ...(await api.post(`events/${eventId}/check-in/scan`, { code, method })), at: now };
+      res = { ...(await api.post(`events/${eventRef.current}/check-in/scan`, { code, method })), at: now };
     } catch (e) {
       res = e instanceof ApiError && e.data?.result
         ? { ...e.data, at: now }
@@ -57,24 +80,30 @@ export default function Scanner() {
     }
     setLast(res);
     setHistory((h) => [res, ...h].slice(0, 20));
+    setOverlay(res);
     navigator.vibrate?.(res.result === "accepted" ? 80 : [60, 60, 60]);
+    // Problems stay up longer so the staff member actually reads them.
+    dismissTimer.current = window.setTimeout(dismiss, res.result === "accepted" ? 1800 : 3500);
   };
 
   const start = async () => {
+    if (scanner.current) return;
     setCamError(null);
+    const s = new Html5Qrcode(READER_ID);
+    scanner.current = s;
     try {
-      const s = new Html5Qrcode(READER_ID);
-      scanner.current = s;
       await s.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 240, height: 240 } },
         (text) => submit(text.trim(), "qr"), () => {});
       setRunning(true);
     } catch (e) {
+      scanner.current = null;
       setCamError("Couldn't open the camera. Allow camera access, or type codes below.");
     }
   };
 
   const stop = async () => {
     await scanner.current?.stop().catch(() => {});
+    scanner.current = null;
     setRunning(false);
   };
 
@@ -139,6 +168,49 @@ export default function Scanner() {
           )}
         </div>
       </main>
+
+      {overlay && <ScanOverlay key={overlay.at} res={overlay} onClose={dismiss} />}
+    </div>
+  );
+}
+
+/** Full-screen result after a scan; tap anywhere to scan the next guest. */
+function ScanOverlay({ res, onClose }: { res: ScanResult; onClose: () => void }) {
+  const ok = res.result === "accepted";
+  const dup = res.result === "duplicate";
+  const color = ok ? "text-success" : dup ? "text-yellow-500" : "text-destructive";
+  const title = ok ? "Checked in" : dup ? "Already used" : "Not allowed";
+
+  return (
+    <div role="alertdialog" aria-live="assertive" aria-label={title} onClick={onClose}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-background/85 backdrop-blur-md px-6 text-center animate-fade-in cursor-pointer"
+      style={{ animationDuration: "0.2s" }}>
+      <div className={`rounded-full ${color} ${ok ? "scan-pulse" : "scan-shake"}`}>
+        <svg viewBox="0 0 52 52" className="w-36 h-36 scan-pop" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+          <circle className="scan-ring" cx="26" cy="26" r="25" fill="currentColor" fillOpacity={0.12} />
+          {ok && <path className="scan-mark" d="M14 27l8 8 16-16" />}
+          {dup && <><path className="scan-mark" d="M26 14v15" /><path className="scan-mark" d="M26 37v1" /></>}
+          {!ok && !dup && <><path className="scan-mark" d="M18 18l16 16" /><path className="scan-mark" d="M34 18L18 34" /></>}
+        </svg>
+      </div>
+
+      <div className="animate-slide-up space-y-1" style={{ animationDuration: "0.4s" }}>
+        <div className={`text-3xl font-bold ${color}`}>{title}</div>
+        {res.attendee ? (
+          <>
+            <div className="text-2xl font-semibold text-foreground">
+              {res.attendee.name}
+              {res.attendee.is_vip && <span className="ml-2 align-middle text-xs px-2 py-0.5 rounded bg-primary/20 text-primary">VIP</span>}
+            </div>
+            {res.attendee.category && <div className="text-muted-foreground">{res.attendee.category}</div>}
+            {!ok && <div className="text-foreground/80 pt-2">{res.message}</div>}
+          </>
+        ) : (
+          <div className="text-foreground/80">{res.message}</div>
+        )}
+      </div>
+
+      <p className="text-xs text-muted-foreground">Tap to scan the next guest</p>
     </div>
   );
 }

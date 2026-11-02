@@ -162,6 +162,52 @@
   to { opacity: 1; }
 }
 
+/* Scanner result overlay: a ring that draws itself, then the tick/cross. */
+.scan-ring {
+  stroke-dasharray: 166;
+  stroke-dashoffset: 166;
+  animation: scanStroke 0.5s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+}
+
+.scan-mark {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: scanStroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.45s forwards;
+}
+
+.scan-pop {
+  animation: scanPop 0.45s ease-out 0.7s both;
+}
+
+.scan-pulse {
+  animation: scanPulse 1.2s ease-out 0.5s;
+}
+
+.scan-shake {
+  animation: scanShake 0.4s ease-in-out 0.5s;
+}
+
+@keyframes scanStroke {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes scanPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+@keyframes scanPulse {
+  from { box-shadow: 0 0 0 0 currentColor; }
+  to { box-shadow: 0 0 0 40px transparent; }
+}
+
+@keyframes scanShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
 @keyframes scaleIn {
   from { 
     opacity: 0; 
