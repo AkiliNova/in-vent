@@ -78,7 +78,7 @@ class DeliverCampaignChunk implements ShouldQueue
         foreach ($recipients as $recipient) {
             try {
                 Mail::to($recipient->destination)->send(new CampaignMail(
-                    subject: $this->personalise($campaign->subject ?? $campaign->name, $recipient),
+                    subjectLine: $this->personalise($campaign->subject ?? $campaign->name, $recipient),
                     body: $this->personalise($campaign->body, $recipient),
                     imagePath: $campaign->image_path,
                 ));

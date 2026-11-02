@@ -13,20 +13,20 @@ class CampaignMail extends Mailable
     use Queueable, SerializesModels;
 
     public function __construct(
-        public string $subject,
+        public string $subjectLine,
         public string $body,
         public ?string $imagePath = null,
     ) {}
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: $this->subject);
+        return new Envelope(subject: $this->subjectLine);
     }
 
     public function content(): Content
     {
         return new Content(
-            markdown: 'mail.campaign',
+            view: 'mail.campaign',
             with: ['body' => $this->body, 'imagePath' => $this->imagePath],
         );
     }
