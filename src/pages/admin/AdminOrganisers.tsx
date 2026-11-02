@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate , Link } from "react-router-dom";
 import { Search, Loader2, Ban, CheckCircle2, Percent, XCircle } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
@@ -128,7 +128,7 @@ export default function AdminOrganisers() {
                   {rows.map((o) => (
                     <tr key={o.id} className={o.suspended ? "opacity-60" : ""}>
                       <td className="px-4 py-3">
-                        <div className="text-foreground font-medium">{o.organization_name}</div>
+                        <Link to={`/admin/organisers/${o.id}`} className="text-foreground font-medium hover:text-primary hover:underline">{o.organization_name}</Link>
                         <div className="text-xs text-muted-foreground">
                           {o.owner_email || o.email} · {o.events_count} event(s) · {o.business_type || "type not set"}
                         </div>
@@ -156,6 +156,7 @@ export default function AdminOrganisers() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1 justify-end">
+                          <Button size="sm" variant="outline" asChild><Link to={`/admin/organisers/${o.id}`}>Open</Link></Button>
                           <Button size="sm" variant="ghost" disabled={busy === o.id}
                             onClick={() => { setFee(o.platform_fee_percent !== null ? String(Number(o.platform_fee_percent)) : ""); setFeeFor(o); }}>
                             <Percent className="w-3.5 h-3.5 mr-1" /> Fee

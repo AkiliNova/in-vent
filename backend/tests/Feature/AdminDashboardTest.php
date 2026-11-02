@@ -64,4 +64,31 @@ class AdminDashboardTest extends TestCase
         $this->assertSame(7.5, $acme->fresh()->feePercent());
         $this->assertSame(1000.0, (float) $this->getJson('/api/admin/organisers')->json('data.0.gmv'));
     }
+
+    public function test_admin_sees_an_organisers_full_picture_and_can_edit_their_details(): void
+    {
+        config(['tikooh.platform_fee_percent' => 10]);
+        $acme = $this->seedSale('Acme', 1000);
+        $this->seedSale('Globex', 500); // must not leak into Acme's numbers
+        User::create(['tenant_id' => $acme->id, 'name' => 'Owner', 'email' => 'o@acme.com', 'password' => 'password123', 'role' => User::ROLE_ORGANIZER]);
+
+        Sanctum::actingAs(User::create(['name' => 'Ops', 'email' => 'ops@x.com', 'password' => 'password123', 'role' => User::ROLE_SUPER_ADMIN]));
+
+        $res = $this->getJson("/api/admin/organisers/{$acme->id}")->assertOk();
+        $this->assertSame(1000.0, (float) $res->json('kpis.gmv'));
+        $this->assertSame(100.0, (float) $res->json('kpis.fees_earned'));
+        $this->assertSame(900.0, (float) $res->json('kpis.wallet_balance'));
+        $this->assertSame(1, $res->json('kpis.tickets_sold'));
+        $this->assertSame('Acme Fest', $res->json('events.0.title'));
+        $this->assertSame(1000.0, (float) $res->json('events.0.revenue'));
+        $this->assertSame(1, $res->json('events.0.attendees_count'));
+        $this->assertCount(1, $res->json('orders'));
+        $this->assertSame('o@acme.com', $res->json('team.0.email'));
+
+        $this->putJson("/api/admin/organisers/{$acme->id}", [
+            'organization_name' => 'Acme Events Ltd', 'payout_phone' => '0712 345 678', 'payout_name' => 'ACME EVENTS',
+        ])->assertOk()->assertJsonPath('payout_phone', '254712345678');
+        $this->assertSame('Acme Events Ltd', $acme->fresh()->organization_name);
+        $this->putJson("/api/admin/organisers/{$acme->id}", ['email' => 'not-an-email'])->assertStatus(422);
+    }
 }

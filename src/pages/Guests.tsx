@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Search, Loader2, CheckCircle2, Users } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,8 @@ interface Attendee {
 
 export default function Guests() {
   const [events, setEvents] = useState<EventItem[]>([]);
-  const [eventId, setEventId] = useState("");
+  const [params] = useSearchParams();
+  const [eventId, setEventId] = useState(params.get("event") || "");
   const [rows, setRows] = useState<Attendee[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
@@ -27,7 +29,7 @@ export default function Guests() {
   useEffect(() => {
     api.get<{ data: EventItem[] }>("events?per_page=100").then((r) => {
       setEvents(r.data);
-      if (r.data[0]) setEventId(r.data[0].uuid);
+      if (r.data[0]) setEventId((current) => current || r.data[0].uuid);
     });
   }, []);
 

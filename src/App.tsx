@@ -32,6 +32,7 @@ import Campaigns from "./pages/Campaigns";
 import Registration from "./pages/Registration";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminOrganisers from "./pages/admin/AdminOrganisers";
+import AdminOrganiserDetail from "./pages/admin/AdminOrganiserDetail";
 
 // Not yet moved off Firebase, so not routed: Rooms,
 // RegistrationFields, AgendaManager, SuperAdmin (replaced by /admin).
@@ -74,6 +75,7 @@ const App = () => (
           <Route path="/register" element={<P><Registration /></P>} />
           <Route path="/admin" element={<P><AdminDashboard /></P>} />
           <Route path="/admin/organisers" element={<P><AdminOrganisers /></P>} />
+          <Route path="/admin/organisers/:id" element={<P><AdminOrganiserDetail /></P>} />
           <Route path="/admin/payouts" element={<P><AdminPayouts /></P>} />
           <Route path="/admin/settings" element={<P><AdminSettings /></P>} />
           <Route path="/admin/messages" element={<P><AdminMessages /></P>} />

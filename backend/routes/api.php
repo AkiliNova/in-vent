@@ -323,6 +323,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('templates/{template}/preview', [AdminSettingsController::class, 'preview'])->whereIn('template', ['ticket', 'campaign']);
         Route::get('dashboard', [AdminController::class, 'overview']);
         Route::get('organisers', [AdminController::class, 'organisers']);
+        Route::get('organisers/{tenant}', [AdminController::class, 'organiser'])->whereNumber('tenant');
         Route::put('organisers/{tenant}', [AdminController::class, 'updateOrganiser'])->whereNumber('tenant');
         Route::get('payments/unmatched', [WalletController::class, 'unmatchedC2b']);
         Route::get('payouts/pending', [WalletController::class, 'pendingPayouts']);
