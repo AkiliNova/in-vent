@@ -99,6 +99,12 @@ Route::post('webhooks/telegram', TelegramWebhookController::class)->name('webhoo
 
 // Registered with Safaricom, which rejects any URL containing "mpesa" — hence "daraja".
 // Campaign email footer / List-Unsubscribe. Signed per recipient; no login.
+// "Add my phone number" from a campaign email. Signed per recipient; no login.
+Route::get('phone/{recipient}', [\App\Http\Controllers\Api\PhoneCaptureController::class, 'show'])
+    ->middleware(['signed:relative', 'throttle:30,1'])->name('campaign.phone');
+Route::post('phone/{recipient}', [\App\Http\Controllers\Api\PhoneCaptureController::class, 'save'])
+    ->middleware(['signed:relative', 'throttle:10,1']);
+
 Route::get('unsubscribe/{recipient}', [CampaignController::class, 'unsubscribePage'])
     ->middleware(['signed:relative', 'throttle:30,1'])->name('campaign.unsubscribe');
 Route::post('unsubscribe/{recipient}', [CampaignController::class, 'unsubscribeConfirm'])

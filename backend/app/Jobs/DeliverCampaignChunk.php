@@ -107,6 +107,7 @@ class DeliverCampaignChunk implements ShouldQueue
                     subjectLine: $this->personalise($campaign->subject ?? $campaign->name, $recipient),
                     body: $this->personalise($campaign->body, $recipient),
                     unsubscribeUrl: CampaignMail::unsubscribeUrl($recipient),
+                    phoneUrl: $campaign->ask_phone ? CampaignMail::phoneUrl($recipient) : null,
                 ));
 
                 $recipient->update(['status' => 'sent', 'sent_at' => now()]);

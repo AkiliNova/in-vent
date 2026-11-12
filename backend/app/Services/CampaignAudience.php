@@ -447,6 +447,16 @@ class CampaignAudience
             $match($contacts, false);
         }
 
+        // "Who still needs to give us a phone number?" (or the reverse).
+        if (in_array($filter['phone'] ?? null, ['missing', 'present'], true)) {
+            $missing = ($filter['phone'] === 'missing');
+            foreach ([$attendees, $contacts] as $q) {
+                $missing
+                    ? $q->where(fn ($w) => $w->whereNull('phone')->orWhere('phone', ''))
+                    : $q->whereNotNull('phone')->where('phone', '!=', '');
+            }
+        }
+
         if ($excludeA) {
             $attendees->whereNotIn('id', $excludeA);
         }

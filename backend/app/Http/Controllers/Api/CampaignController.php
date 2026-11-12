@@ -34,6 +34,7 @@ class CampaignController extends Controller
         return response()->json(
             Campaign::query()
                 ->with('event:id,title', 'featuredEvent:id,uuid,title', 'monitors:id,campaign_id,destination,status,error,sent_at,delivered_at')
+                ->withCount(['recipients as phones_added' => fn ($q) => $q->whereNotNull('phone_added_at')])
                 ->when($request->integer('event_id'), fn ($q, $id) => $q->where('event_id', $id))
                 ->when($request->string('channel')->toString(), fn ($q, $c) => $q->where('channel', $c))
                 ->latest()
@@ -250,6 +251,8 @@ class CampaignController extends Controller
             subjectLine: '[Test] '.$fill($campaign->subject ?? $campaign->name),
             body: $fill($campaign->body),
             unsubscribeUrl: null,
+            // Test copy: the button shows, but there is no recipient row to save against.
+            phoneUrl: $campaign->ask_phone ? rtrim((string) config('app.frontend_url'), '/') : null,
         ));
 
         return response()->json(['message' => "Test sent to {$user->email}."]);
@@ -497,6 +500,8 @@ class CampaignController extends Controller
             'audience_filter.event_from' => ['nullable', 'date'],
             'audience_filter.event_to' => ['nullable', 'date'],
             'audience_filter.q' => ['nullable', 'string', 'max:100'],
+            'audience_filter.phone' => ['nullable', 'in:missing,present'],
+            'ask_phone' => ['nullable', 'boolean'],
             'audience_filter.include' => ['nullable', 'array', 'max:20000'],
             'audience_filter.include.*' => ['string', 'regex:/^[ac]:\d+$/'],
             'audience_filter.exclude' => ['nullable', 'array', 'max:20000'],
@@ -519,6 +524,11 @@ class CampaignController extends Controller
         }
 
         $filter = $data['audience_filter'] ?? [];
+
+        // The phone link only makes sense in an email; an SMS reaches people who already have one.
+        if (($data['channel'] ?? $campaign?->channel) === 'sms') {
+            $data['ask_phone'] = false;
+        }
 
         if (($filter['source'] ?? null) === 'platform') {
             abort_unless($user->isSuperAdmin(), 403, 'Only Tikooh admins can message everyone on the platform.');

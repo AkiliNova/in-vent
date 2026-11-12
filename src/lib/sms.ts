@@ -73,6 +73,8 @@ export interface AudienceFilter {
   event_from?: string;
   event_to?: string;
   q?: string;
+  /** Has the person given a phone number? */
+  phone?: "missing" | "present";
   include?: string[];
   exclude?: string[];
   include_contacts?: boolean;
@@ -156,6 +158,6 @@ export const STATE_STYLE: Record<PersonState, string> = {
 export function activeFilters(f: AudienceFilter): number {
   return [
     f.tenant_ids?.length, f.ticket_tier_id?.length, f.category?.length, f.status?.length, f.country?.length,
-    f.attendance, f.paid, f.consent, f.registered_from || f.registered_to, f.event_from || f.event_to, f.q?.trim(),
+    f.attendance, f.paid, f.consent, f.phone, f.registered_from || f.registered_to, f.event_from || f.event_to, f.q?.trim(),
   ].filter(Boolean).length;
 }

@@ -17,6 +17,7 @@ class CampaignRecipient extends Model
         return [
             'cost' => 'decimal:4',
             'is_monitor' => 'boolean',
+            'phone_added_at' => 'datetime',
             'sent_at' => 'datetime',
             'delivered_at' => 'datetime',
         ];

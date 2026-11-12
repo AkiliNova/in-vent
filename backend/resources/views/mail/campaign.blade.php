@@ -70,6 +70,22 @@
 </table>
 @endif
 
+@if(!empty($phoneUrl))
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  <tr><td class="tk-pad" style="padding:22px 44px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #23406A;border-radius:18px;background:#0E1729;">
+      <tr><td align="center" style="padding:24px 22px;font-family:{{ $font }};">
+        <div style="font-size:30px;line-height:34px;">&#128241;</div>
+        <div style="margin-top:8px;font-size:18px;line-height:24px;font-weight:800;color:#FFFFFF;">Add your phone number</div>
+        <div style="margin-top:6px;font-size:14px;line-height:21px;color:#AEB9CE;">So we can text you your tickets and important event updates. It takes 10 seconds.</div>
+        <div style="margin-top:18px;">{!! $button($phoneUrl, 'Add my phone number') !!}</div>
+        <div style="margin-top:12px;font-size:12px;line-height:18px;color:#5C6A85;">This link is just for you. Please don't forward this email.</div>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+@endif
+
 @if($ctaUrl && $ctaLabel)
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
   <tr><td class="tk-pad" align="center" style="padding:26px 44px 4px;">{!! $button($ctaUrl, $ctaLabel) !!}</td></tr>

@@ -290,6 +290,11 @@ export default function AudienceBuilder({ channel, body, filter, onChange, isAdm
                     <Segmented value={filter.paid} onChange={(v) => set({ paid: v })}
                       options={[{ id: undefined, label: "Any" }, { id: "paid", label: "Paid" }, { id: "free", label: "Free" }]} />
                   </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">Phone number</div>
+                    <Segmented value={filter.phone} onChange={(v) => set({ phone: v })}
+                      options={[{ id: undefined, label: "Any" }, { id: "missing", label: "Missing" }, { id: "present", label: "Has one" }]} />
+                  </div>
                 </div>
 
                 {(filter.event_ids?.length ?? 0) > 0 && (
@@ -350,7 +355,7 @@ export default function AudienceBuilder({ channel, body, filter, onChange, isAdm
 
                 {n > 0 && (
                   <button type="button" className="text-xs text-muted-foreground hover:text-destructive"
-                    onClick={() => set({ q: "", attendance: undefined, checked_in: undefined, paid: undefined, ticket_tier_id: [], category: [], status: [], country: [], consent: undefined, registered_from: undefined, registered_to: undefined, event_from: undefined, event_to: undefined })}>
+                    onClick={() => set({ q: "", attendance: undefined, checked_in: undefined, paid: undefined, phone: undefined, ticket_tier_id: [], category: [], status: [], country: [], consent: undefined, registered_from: undefined, registered_to: undefined, event_from: undefined, event_to: undefined })}>
                     Clear refinements
                   </button>
                 )}

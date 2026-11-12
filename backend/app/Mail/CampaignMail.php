@@ -30,9 +30,11 @@ class CampaignMail extends Mailable
         // For the message log (LogSentEmail).
         public ?int $campaignId = null,
         public ?int $tenantId = null,
+        // Personal "Add my phone number" link (campaigns with ask_phone).
+        public ?string $phoneUrl = null,
     ) {}
 
-    public static function forCampaign(Campaign $campaign, string $subjectLine, string $body, ?string $unsubscribeUrl): self
+    public static function forCampaign(Campaign $campaign, string $subjectLine, string $body, ?string $unsubscribeUrl, ?string $phoneUrl = null): self
     {
         return new self(
             subjectLine: $subjectLine,
@@ -45,7 +47,15 @@ class CampaignMail extends Mailable
             senderName: self::senderName($campaign),
             campaignId: $campaign->id,
             tenantId: $campaign->tenant_id,
+            phoneUrl: $phoneUrl,
         );
+    }
+
+    /** Signed per recipient like unsubscribe: no email in the link, can't be edited to reach someone else. */
+    public static function phoneUrl(CampaignRecipient $recipient): string
+    {
+        return rtrim((string) config('app.url'), '/')
+            .URL::signedRoute('campaign.phone', ['recipient' => $recipient->id], absolute: false);
     }
 
     /**
@@ -108,6 +118,7 @@ class CampaignMail extends Mailable
                 'ctaLabel' => $this->ctaLabel,
                 'ctaUrl' => $this->ctaUrl,
                 'unsubscribeUrl' => $this->unsubscribeUrl,
+                'phoneUrl' => $this->phoneUrl,
                 'senderName' => $this->senderName ?? config('mail.from.name'),
             ],
         );

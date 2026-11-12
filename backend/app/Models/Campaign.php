@@ -21,6 +21,7 @@ class Campaign extends Model
         return [
             'audience_filter' => 'array',
             'monitor_numbers' => 'array',
+            'ask_phone' => 'boolean',
             'estimated_cost' => 'decimal:2',
             'scheduled_for' => 'datetime',
             'started_at' => 'datetime',

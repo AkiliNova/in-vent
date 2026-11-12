@@ -34,6 +34,8 @@ interface Campaign {
   cta_url: string | null;
   audience_filter: Partial<AudienceFilter> | null;
   monitor_numbers: string[] | null;
+  ask_phone?: boolean;
+  phones_added?: number;
   monitors?: { destination: string; status: string; error: string | null; delivered_at: string | null }[];
   recipient_count: number;
   sent_count: number;
@@ -63,6 +65,8 @@ const blank = {
   filter: { source: "all", include_contacts: true } as AudienceFilter,
   /** Up to three of your own numbers that get every SMS first. */
   monitors: [] as string[],
+  /** Email only: add a personal "Add my phone number" button. */
+  ask_phone: false,
 };
 type Form = typeof blank;
 
@@ -131,7 +135,18 @@ export default function Campaigns() {
     return () => window.clearInterval(t);
   }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const open = (c: Campaign | null) => { setEditing(c); setComposerOpen(true); };
+  const [preset, setPreset] = useState<Partial<Form> | null>(null);
+  const open = (c: Campaign | null, start: Partial<Form> | null = null) => { setEditing(c); setPreset(start); setComposerOpen(true); };
+
+  /** One click: an email to everyone without a phone number, with the personal link. */
+  const collectPhones = () => open(null, {
+    name: "Collect phone numbers",
+    channel: "email",
+    ask_phone: true,
+    filter: { source: isAdmin ? "platform" : "all", phone: "missing", include_contacts: true },
+    subject: "{{first_name}}, add your phone number for ticket updates",
+    body: "Hi {{first_name}},\n\nThanks for being part of our events! We'd like to text you your tickets, gate times and important updates, but we don't have your phone number yet.\n\nTap the button below to add it. It takes 10 seconds.",
+  });
 
   const testSend = async (c: Campaign) => {
     try {
@@ -195,6 +210,9 @@ export default function Campaigns() {
               <Button variant="outline" onClick={() => setContactsOpen(true)}>
                 <Users className="w-4 h-4 mr-2" /> Contacts
               </Button>
+              <Button variant="outline" onClick={collectPhones}>
+                <Smartphone className="w-4 h-4 mr-2" /> Collect phone numbers
+              </Button>
               <Button onClick={() => open(null)}><Plus className="w-4 h-4 mr-2" /> New campaign</Button>
             </div>
           </div>
@@ -231,6 +249,7 @@ export default function Campaigns() {
                           {audienceLabel(c)} · {c.recipient_count.toLocaleString()} {c.recipient_count === 1 ? "person" : "people"}
                           {c.channel === "sms" && Number(c.estimated_cost) > 0 && ` · ~${kes(c.estimated_cost)}`}
                           {c.featured_event && ` · promotes ${c.featured_event.title}`}
+                          {c.ask_phone && <span className="text-primary"> · {(c.phones_added ?? 0).toLocaleString()} added their phone</span>}
                         </div>
                         {c.subject && <div className="text-sm text-foreground/80 mt-1 truncate">“{c.subject}”</div>}
                       </div>
@@ -276,6 +295,7 @@ export default function Campaigns() {
       {composerOpen && (
         <Composer
           campaign={editing}
+          preset={preset}
           events={events}
           isAdmin={isAdmin}
           contactTotal={contactTotal ?? 0}
@@ -300,8 +320,9 @@ export default function Campaigns() {
 
 /* ── Composer ─────────────────────────────────────────────────────────── */
 
-function Composer({ campaign, events, isAdmin, contactTotal, sms, onClose, onSaved }: {
+function Composer({ campaign, preset, events, isAdmin, contactTotal, sms, onClose, onSaved }: {
   campaign: Campaign | null;
+  preset?: Partial<Form> | null;
   events: EventItem[];
   isAdmin: boolean;
   contactTotal: number;
@@ -314,6 +335,7 @@ function Composer({ campaign, events, isAdmin, contactTotal, sms, onClose, onSav
     channel: campaign.channel,
     filter: filterFrom(campaign),
     monitors: campaign.monitor_numbers ?? [],
+    ask_phone: !!campaign.ask_phone,
     featured_event_id: campaign.featured_event_id ? String(campaign.featured_event_id) : "",
     subject: campaign.subject ?? "",
     body: campaign.body,
@@ -321,7 +343,7 @@ function Composer({ campaign, events, isAdmin, contactTotal, sms, onClose, onSav
     image_url: "",
     cta_label: campaign.cta_label ?? "",
     cta_url: campaign.cta_url ?? "",
-  } : { ...blank, monitors: sms?.monitor_numbers ?? [] });
+  } : { ...blank, monitors: sms?.monitor_numbers ?? [], ...(preset ?? {}) });
   const [audience, setAudience] = useState<AudienceSummary | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -344,6 +366,7 @@ function Composer({ campaign, events, isAdmin, contactTotal, sms, onClose, onSav
     cta_url: form.channel === "email" ? form.cta_url || null : null,
     audience_filter: form.filter,
     monitor_numbers: form.channel === "sms" ? monitors : null,
+    ask_phone: form.channel === "email" && form.ask_phone,
   });
 
   // Credits depend on the body only for SMS (personalised per person server-side).
@@ -499,6 +522,23 @@ function Composer({ campaign, events, isAdmin, contactTotal, sms, onClose, onSav
             )}
 
             {form.channel === "email" && (
+              <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer">
+                <input type="checkbox" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={form.ask_phone}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    // Asking makes most sense of people we don't have a number for.
+                    setForm((f) => ({ ...f, ask_phone: on, filter: on && !f.filter.phone ? { ...f.filter, phone: "missing" } : f.filter }));
+                  }} />
+                <span>
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-foreground"><Smartphone className="w-4 h-4 text-primary" /> Ask for their phone number</span>
+                  <span className="block text-xs text-muted-foreground mt-0.5">
+                    Adds a personal "Add my phone number" button. They tap it, type their number, and their guest record updates itself, checked as a real mobile. No replies to read.
+                  </span>
+                </span>
+              </label>
+            )}
+
+            {form.channel === "email" && (
               <>
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -596,6 +636,15 @@ function EmailPreview({ form, imageUrl, featured }: { form: Form; imageUrl: stri
                 <div className="text-[#AEB9CE] text-xs mt-1">📅 {new Date(featured.start_date).toLocaleString("en-KE", { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" })}</div>
                 <div className="inline-block mt-2.5 rounded-lg px-3 py-1.5 text-xs font-extrabold text-[#05070F] bg-gradient-to-r from-[#19E6CE] to-[#19A1E6]">Get tickets →</div>
               </div>
+            </div>
+          )}
+          {form.ask_phone && (
+            <div className="rounded-xl border border-[#23406A] bg-[#0E1729] p-4 text-center">
+              <div className="text-xl">📱</div>
+              <div className="text-white font-bold mt-1">Add your phone number</div>
+              <div className="text-[#AEB9CE] text-xs mt-1">So we can text you your tickets and important event updates.</div>
+              <div className="inline-block mt-3 rounded-lg px-4 py-2 text-xs font-extrabold text-[#05070F] bg-gradient-to-r from-[#19E6CE] to-[#19A1E6]">Add my phone number →</div>
+              <div className="text-[10px] text-[#5C6A85] mt-2">Personal link for each guest</div>
             </div>
           )}
           {form.cta_url && (

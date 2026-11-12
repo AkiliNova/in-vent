@@ -187,6 +187,44 @@ class CampaignTest extends TestCase
         $this->assertTrue(Contact::withoutGlobalScope('tenant')->where('phone', '254727288201')->exists(), 'Excel drops the leading 0');
     }
 
+    public function test_guests_add_their_phone_number_from_the_email(): void
+    {
+        Mail::fake();
+
+        // Grace already has a number, so "missing a phone" leaves her out.
+        TenantContext::withoutScoping(fn () => Attendee::withoutGlobalScope('tenant')->where('email', 'grace@example.com')->update(['phone' => '0711000000']));
+        Contact::withoutGlobalScope('tenant')->where('email', 'grace@example.com')->update(['phone' => '0711000000']);
+
+        $uuid = $this->draft(['ask_phone' => true, 'audience_filter' => ['source' => 'all', 'phone' => 'missing']])->assertCreated()->json('uuid');
+        $this->postJson("/api/campaigns/{$uuid}/send")->assertStatus(202);
+
+        $sent = [];
+        Mail::assertSent(CampaignMail::class, function (CampaignMail $m) use (&$sent) {
+            $sent[$m->to[0]['address']] = $m->phoneUrl;
+
+            return true;
+        });
+        $this->assertArrayNotHasKey('grace@example.com', $sent);
+        $this->assertStringContainsString('/api/phone/', $sent['ada@example.com']);
+
+        $recipient = CampaignRecipient::where('destination', 'ada@example.com')->first();
+        $url = URL::signedRoute('campaign.phone', ['recipient' => $recipient->id], absolute: false);
+
+        $this->get($url)->assertOk()->assertSee('Add your phone number');
+        $this->get(str_replace('signature=', 'signature=x', $url))->assertForbidden();
+
+        $this->post($url, ['phone' => '075824871'])->assertStatus(422)->assertSee('Kenyan mobiles have 10 digits');
+        $this->post($url, ['phone' => '0712 345 678'])->assertOk()->assertSee('+254712345678');
+
+        // Every one of Ada's registrations is updated, across both events.
+        $phones = TenantContext::withoutScoping(fn () => Attendee::withoutGlobalScope('tenant')
+            ->whereRaw('LOWER(email) = ?', ['ada@example.com'])->pluck('phone')->unique()->values()->all());
+        $this->assertSame(['+254712345678'], $phones);
+        $this->assertNotNull($recipient->fresh()->phone_added_at);
+
+        $this->getJson('/api/campaigns?per_page=5')->assertJsonPath('data.0.phones_added', 1);
+    }
+
     public function test_contact_list_includes_registered_attendees_once_each(): void
     {
         $r = $this->getJson('/api/contacts?per_page=50')->assertOk();
