@@ -207,7 +207,8 @@ class CampaignController extends Controller
         // people paste "0712 345 678".
         $rows = collect(preg_split('/[\r\n,;\t]+/', $data['numbers']))
             ->map(fn ($n) => trim((string) $n))
-            ->filter(fn ($n) => preg_match('/\d{4,}/', (string) $n))
+            // Count digits, not runs of them: "+256 772 123 456" has no 4 in a row.
+            ->filter(fn ($n) => strlen(preg_replace('/\D+/', '', (string) $n)) >= 4)
             ->take(5000)
             ->map(fn ($n) => ['input' => $n] + PhoneCheck::classify($n))
             ->values();

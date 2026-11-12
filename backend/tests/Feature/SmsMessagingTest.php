@@ -356,9 +356,9 @@ class SmsMessagingTest extends TestCase
         $this->postJson('/api/admin/sms/check-numbers', ['numbers' => '0712345678'])->assertForbidden();
 
         Sanctum::actingAs($this->admin);
-        $this->postJson('/api/admin/sms/check-numbers', ['numbers' => "0712345678, 0733111222\n020 2222333; 07123"])
+        $this->postJson('/api/admin/sms/check-numbers', ['numbers' => "0712345678, 0733111222\n020 2222333; 07123\n+256 772 123 456"])
             ->assertOk()
-            ->assertJson(['counts' => ['ok' => 2, 'unsupported' => 1, 'invalid' => 1, 'total' => 4], 'networks' => ['Safaricom' => 1, 'Airtel' => 1]]);
+            ->assertJson(['counts' => ['ok' => 2, 'unsupported' => 2, 'invalid' => 1, 'total' => 5], 'networks' => ['Safaricom' => 1, 'Airtel' => 1]]);
 
         $flag = SmsNumberFlag::create(['number' => '254712345678', 'reason' => 'InvalidPhoneNumber', 'last_failed_at' => now()]);
         $this->getJson('/api/admin/sms/flags')->assertOk()->assertJsonPath('total', 1);
