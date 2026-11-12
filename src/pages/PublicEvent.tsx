@@ -334,10 +334,11 @@ export default function PublicEvent() {
                         <Input id="bn" required autoComplete="name" value={buyer.name} onChange={(e) => setBuyer((b) => ({ ...b, name: e.target.value }))} /></div>
                       <div className="space-y-1.5"><Label htmlFor="be">Email (tickets are sent here)</Label>
                         <Input id="be" type="email" required autoComplete="email" value={buyer.email} onChange={(e) => setBuyer((b) => ({ ...b, email: e.target.value }))} /></div>
-                      {total > 0 && (
-                        <div className="space-y-1.5"><Label htmlFor="bp">M-Pesa number</Label>
-                          <Input id="bp" type="tel" required autoComplete="tel" placeholder="0712 345 678" value={buyer.phone} onChange={(e) => setBuyer((b) => ({ ...b, phone: e.target.value }))} /></div>
-                      )}
+                      <div className="space-y-1.5"><Label htmlFor="bp">{total > 0 ? "M-Pesa number" : "Phone number"}</Label>
+                        <Input id="bp" type="tel" required autoComplete="tel" inputMode="tel" placeholder="0712 345 678"
+                          minLength={9} value={buyer.phone} onChange={(e) => setBuyer((b) => ({ ...b, phone: e.target.value }))} />
+                        {total === 0 && <p className="text-xs text-muted-foreground">We'll text you your ticket and event updates.</p>}
+                      </div>
                       {total > 0 && (
                         <div className="space-y-1.5">
                           <Label htmlFor="promo">Promo code</Label>

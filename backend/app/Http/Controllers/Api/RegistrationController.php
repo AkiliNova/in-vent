@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Event;
 use App\Models\Order;
+use App\Rules\ValidPhone;
 use App\Services\OrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,8 +30,10 @@ class RegistrationController extends Controller
             'quantity' => ['nullable', 'integer', 'min:1', 'max:20'],
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:32'],
+            'phone' => ['required', 'string', 'max:32', new ValidPhone],
             'payment' => ['required', 'in:complimentary,cash'],
+        ], [
+            'phone.required' => 'Enter the guest\'s phone number.',
         ]);
 
         // Walk-ins often have no email; the attendee record still needs a key.

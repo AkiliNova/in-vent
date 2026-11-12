@@ -35,8 +35,16 @@ class DoorRegistrationTest extends TestCase
     protected function register(array $overrides = [])
     {
         return $this->postJson("/api/events/{$this->event->uuid}/registrations", $overrides + [
-            'ticket_tier_id' => $this->tier->id, 'name' => 'Walk In', 'payment' => 'cash',
+            'ticket_tier_id' => $this->tier->id, 'name' => 'Walk In', 'payment' => 'cash', 'phone' => '0712345678',
         ]);
+    }
+
+    public function test_a_phone_number_is_required_and_must_be_a_mobile(): void
+    {
+        $this->register(['phone' => null])->assertStatus(422)->assertJsonValidationErrors(['phone' => 'Enter the guest\'s phone number.']);
+        $this->register(['phone' => '075824871'])->assertStatus(422)->assertJsonValidationErrors('phone');
+        $this->register(['phone' => '020 2222 333'])->assertStatus(422)->assertJsonFragment(['Please use a mobile number. We send your ticket by SMS.']);
+        $this->register(['phone' => '+256 772 123 456'])->assertCreated();
     }
 
     public function test_a_complimentary_guest_gets_a_ticket_the_scanner_accepts(): void

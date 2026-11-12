@@ -89,7 +89,7 @@ export default function Registration() {
         ticket_tier_id: Number(tierId),
         quantity: qty,
         name: form.name,
-        phone: form.phone || null,
+        phone: form.phone.trim(),
         email: form.email || null,
         payment,
       });
@@ -137,7 +137,7 @@ export default function Registration() {
                 <Input id="gn" required autoComplete="off" value={form.name} onChange={set("name")} /></div>
               <div className="grid sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="gp">Phone (ticket sent by SMS)</Label>
-                  <Input id="gp" type="tel" placeholder="0712 345 678" value={form.phone} onChange={set("phone")} /></div>
+                  <Input id="gp" type="tel" required inputMode="tel" minLength={9} placeholder="0712 345 678" value={form.phone} onChange={set("phone")} /></div>
                 <div className="space-y-1.5"><Label htmlFor="gq">Tickets</Label>
                   <Input id="gq" type="number" min={1} max={20} value={form.quantity} onChange={set("quantity")} /></div>
               </div>

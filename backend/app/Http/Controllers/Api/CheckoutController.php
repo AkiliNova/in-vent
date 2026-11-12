@@ -11,6 +11,7 @@ use App\Services\Payments\MpesaGateway;
 use App\Services\Payments\PesapalGateway;
 use App\Support\TenantContext;
 use Illuminate\Http\JsonResponse;
+use App\Rules\ValidPhone;
 use Illuminate\Http\Request;
 
 /**
@@ -64,8 +65,10 @@ class CheckoutController extends Controller
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:50'],
             'buyer.name' => ['required', 'string', 'max:255'],
             'buyer.email' => ['required', 'email', 'max:255'],
-            'buyer.phone' => ['nullable', 'string', 'max:32'],
+            'buyer.phone' => ['required', 'string', 'max:32', new ValidPhone],
             'promo_code' => ['nullable', 'string', 'max:64'],
+        ], [
+            'buyer.phone.required' => 'Enter your phone number.',
         ]);
 
         $event = $this->event($eventUuid);

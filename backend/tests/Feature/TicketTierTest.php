@@ -34,10 +34,16 @@ class TicketTierTest extends TestCase
 
         $order = fn () => $this->postJson("/api/public/events/{$event->uuid}/orders", [
             'items' => [['ticket_tier_id' => $tier['id'], 'quantity' => 1]],
-            'buyer' => ['name' => 'Ada', 'email' => 'ada@example.com'],
+            'buyer' => ['name' => 'Ada', 'email' => 'ada@example.com', 'phone' => '0712345678'],
         ]);
 
         $order()->assertCreated();
+
+        // Online buyers must leave a working phone number.
+        $this->postJson("/api/public/events/{$event->uuid}/orders", [
+            'items' => [['ticket_tier_id' => $tier['id'], 'quantity' => 1]],
+            'buyer' => ['name' => 'Bo', 'email' => 'bo@example.com'],
+        ])->assertStatus(422)->assertJsonValidationErrors(['buyer.phone' => 'Enter your phone number.']);
 
         $this->travel(2)->days();
         $order()->assertStatus(422);
