@@ -207,6 +207,20 @@ class SmsMessagingTest extends TestCase
             ->assertOk()->assertJsonPath('categories', ['General']);
     }
 
+    public function test_admin_picking_an_event_gets_its_attendees_whatever_the_source_card(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        // Regression: picking events while "My account's guests" was selected returned nobody.
+        foreach (['all', 'event', 'platform'] as $source) {
+            $this->postJson('/api/campaigns/audience', ['channel' => 'email', 'body' => 'Hi', 'audience_filter' => ['source' => $source, 'event_ids' => [$this->gig->id]]])
+                ->assertOk()->assertJsonPath('recipient_count', 4, "source={$source}");
+        }
+
+        $this->postJson('/api/campaigns/audience', ['channel' => 'email', 'body' => 'Hi', 'audience_filter' => ['source' => 'all', 'event_ids' => [$this->theirs->id]]])
+            ->assertJsonPath('recipient_count', 1);
+    }
+
     public function test_send_is_refused_when_the_africas_talking_balance_is_too_low(): void
     {
         Bus::fake();

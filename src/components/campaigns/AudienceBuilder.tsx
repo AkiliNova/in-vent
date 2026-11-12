@@ -260,7 +260,15 @@ export default function AudienceBuilder({ channel, body, filter, onChange, isAdm
             )}
             <MultiPicker label="event" placeholder={filter.source === "event" ? "Choose events…" : "All events"} icon={CalendarDays}
               selected={eventLabels} load={loadEvents}
-              onChange={(next) => { setEventLabels(next); set({ event_ids: next.map((e) => e.id), ticket_tier_id: [] }); }} />
+              onChange={(next) => {
+                setEventLabels(next);
+                set({
+                  event_ids: next.map((e) => e.id),
+                  ticket_tier_id: [],
+                  // Picking events means "guests of these events"; say so on the cards.
+                  ...(next.length && filter.source === "all" ? { source: "event" as Source } : {}),
+                });
+              }} />
           </div>
 
           {/* Refine */}

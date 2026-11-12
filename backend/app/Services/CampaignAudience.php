@@ -351,7 +351,8 @@ class CampaignAudience
 
         // Whose attendees are in reach at all. Admins reach across organisers
         // for the platform and event sources; "all my past guests" stays theirs.
-        $platformWide = $admin && ($source === 'platform' || $source === 'event' || $handPicked);
+        // Picking events says whose guests these are, whatever card is selected.
+        $platformWide = $admin && ($source === 'platform' || $source === 'event' || $handPicked || self::eventIds($campaign) !== []);
 
         $attendees = Attendee::withoutGlobalScope('tenant')
             ->select(['id', 'tenant_id', 'event_id', 'first_name', 'last_name', 'email', 'phone', 'company', 'category'])
