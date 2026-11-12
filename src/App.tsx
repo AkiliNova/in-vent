@@ -33,6 +33,7 @@ import Registration from "./pages/Registration";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminOrganisers from "./pages/admin/AdminOrganisers";
 import AdminOrganiserDetail from "./pages/admin/AdminOrganiserDetail";
+import AppShell from "@/components/shell/AppShell";
 
 // Not yet moved off Firebase, so not routed: Rooms,
 // RegistrationFields, AgendaManager, SuperAdmin (replaced by /admin).
@@ -62,24 +63,26 @@ const App = () => (
           <Route path="/onboarding" element={<OrganizerOnboarding />} />
           <Route path="/admin/login" element={<AdminLogin />} />
 
-          {/* Organiser */}
-          <Route path="/dashboard" element={<P><Dashboard /></P>} />
-          <Route path="/events" element={<P><EventsDashboard /></P>} />
-          <Route path="/scanner" element={<P><Scanner /></P>} />
-          <Route path="/guests" element={<P><Guests /></P>} />
-          <Route path="/payouts" element={<P><Payouts /></P>} />
-          <Route path="/wallet" element={<P><Payouts /></P>} />
-          <Route path="/settings" element={<P><BusinessSettings /></P>} />
-          <Route path="/promo-codes" element={<P><PromoCodes /></P>} />
-          <Route path="/campaigns" element={<P><Campaigns /></P>} />
-          <Route path="/register" element={<P><Registration /></P>} />
-          <Route path="/admin" element={<P><AdminDashboard /></P>} />
-          <Route path="/admin/organisers" element={<P><AdminOrganisers /></P>} />
-          <Route path="/admin/organisers/:id" element={<P><AdminOrganiserDetail /></P>} />
-          <Route path="/admin/payouts" element={<P><AdminPayouts /></P>} />
-          <Route path="/admin/settings" element={<P><AdminSettings /></P>} />
-          <Route path="/admin/messages" element={<P><AdminMessages /></P>} />
-          <Route path="/admin/blog" element={<P><BlogManager /></P>} />
+          {/* Signed-in app: one shell (sidebar, top bar, event switcher, Ctrl+K) */}
+          <Route element={<P><AppShell /></P>}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/events" element={<EventsDashboard />} />
+            <Route path="/scanner" element={<Scanner />} />
+            <Route path="/guests" element={<Guests />} />
+            <Route path="/payouts" element={<Payouts />} />
+            <Route path="/wallet" element={<Payouts />} />
+            <Route path="/settings" element={<BusinessSettings />} />
+            <Route path="/promo-codes" element={<PromoCodes />} />
+            <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/register" element={<Registration />} />
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/organisers" element={<AdminOrganisers />} />
+            <Route path="/admin/organisers/:id" element={<AdminOrganiserDetail />} />
+            <Route path="/admin/payouts" element={<AdminPayouts />} />
+            <Route path="/admin/settings" element={<AdminSettings />} />
+            <Route path="/admin/messages" element={<AdminMessages />} />
+            <Route path="/admin/blog" element={<BlogManager />} />
+          </Route>
 
           <Route path="*" element={<NotFound />} />
         </Routes>

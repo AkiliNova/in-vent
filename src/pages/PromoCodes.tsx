@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { api, errorMessage, kes, EventItem } from "@/lib/api";
+import { useSelectedEvent } from "@/context/WorkspaceContext";
 import { fetchAll } from "@/lib/paging";
 
 interface Promo {
@@ -33,7 +34,7 @@ const blank = {
 
 export default function PromoCodes() {
   const [events, setEvents] = useState<EventItem[]>([]);
-  const [eventId, setEventId] = useState("");
+  const [eventId, setEventId] = useSelectedEvent();
   const [promos, setPromos] = useState<Promo[] | null>(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blank);
@@ -42,7 +43,7 @@ export default function PromoCodes() {
   useEffect(() => {
     fetchAll<EventItem>("events").then((all) => {
       setEvents(all);
-      if (all[0]) setEventId(all[0].uuid);
+      if (all[0] && !eventId) setEventId(all[0].uuid);
       else setPromos([]);
     });
   }, []);

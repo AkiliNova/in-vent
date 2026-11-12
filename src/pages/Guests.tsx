@@ -5,6 +5,7 @@ import Navigation from "@/components/Navigation";
 import Pager from "@/components/Pager";
 import { Input } from "@/components/ui/input";
 import { api, kes, EventItem } from "@/lib/api";
+import { useSelectedEvent } from "@/context/WorkspaceContext";
 import { fetchAll, Page } from "@/lib/paging";
 
 interface Attendee {
@@ -22,18 +23,18 @@ interface Attendee {
 export default function Guests() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [params] = useSearchParams();
-  const [eventId, setEventId] = useState(params.get("event") || "");
+  const [eventId, setEventId] = useSelectedEvent();
   const [list, setList] = useState<Page<Attendee> | null>(null);
   const [page, setPage] = useState(1);
   const [stats, setStats] = useState<{ registered: number; checked_in: number } | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(params.get("search") || "");
   const [loading, setLoading] = useState(false);
   const rows = list?.data ?? [];
 
   useEffect(() => {
     fetchAll<EventItem>("events").then((all) => {
       setEvents(all);
-      if (all[0]) setEventId((current) => current || all[0].uuid);
+      if (all[0] && !eventId) setEventId(all[0].uuid);
     }).catch(() => {});
   }, []);
 

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { api, errorMessage, kes, EventItem, TicketTier } from "@/lib/api";
+import { useSelectedEvent } from "@/context/WorkspaceContext";
 import { fetchAll, Page } from "@/lib/paging";
 import Pager from "@/components/Pager";
 
@@ -35,7 +36,7 @@ const blank = { name: "", phone: "", email: "", quantity: "1" };
 export default function Registration() {
   const [params] = useSearchParams();
   const [events, setEvents] = useState<EventItem[]>([]);
-  const [eventId, setEventId] = useState("");
+  const [eventId, setEventId] = useSelectedEvent();
   const [tiers, setTiers] = useState<TicketTier[]>([]);
   const [tierId, setTierId] = useState("");
   const [payment, setPayment] = useState<"cash" | "complimentary">("cash");
@@ -56,7 +57,9 @@ export default function Registration() {
       const next = [...live].sort((a, b) => +new Date(a.start_date) - +new Date(b.start_date))
         .find((e) => +new Date(e.end_date || e.start_date) > Date.now() - 12 * 3600_000);
       const pick = wanted || next || live[0];
-      if (pick) setEventId(pick.uuid);
+      // The event chosen in the top-bar switcher wins if it is open for registration.
+      const keep = live.find((e) => e.uuid === eventId);
+      if (!keep && pick) setEventId(pick.uuid);
     }).catch(() => {});
   }, []);
 

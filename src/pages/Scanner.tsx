@@ -6,6 +6,7 @@ import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, ApiError, EventItem } from "@/lib/api";
+import { useSelectedEvent } from "@/context/WorkspaceContext";
 import { fetchAll } from "@/lib/paging";
 
 interface ScanResult {
@@ -20,7 +21,7 @@ const READER_ID = "qr-reader";
 export default function Scanner() {
   const [params] = useSearchParams();
   const [events, setEvents] = useState<EventItem[]>([]);
-  const [eventId, setEventId] = useState<string>(params.get("event") || "");
+  const [eventId, setEventId] = useSelectedEvent();
   const [running, setRunning] = useState(false);
   const [last, setLast] = useState<ScanResult | null>(null);
   const [history, setHistory] = useState<ScanResult[]>([]);

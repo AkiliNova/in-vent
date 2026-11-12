@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,6 +9,7 @@ import {
   UserRound, Inbox, SlidersHorizontal
 } from 'lucide-react';
 import { useAuth } from "@/context/AuthContext";
+import { ShellContext } from "@/components/shell/ShellContext";
 
 const sports  = ["Football", "Basketball", "Rugby", "Athletics", "Cricket"];
 const counties = [
@@ -21,6 +22,7 @@ const Navigation = () => {
   const navigate  = useNavigate();
   const [mobileMenuOpen,    setMobileMenuOpen]    = useState(false);
   const { user, logout } = useAuth();
+  const inShell = useContext(ShellContext);
   const isSuperAdmin = user?.role === "super_admin";
   const [openSports,         setOpenSports]        = useState(false);
   const [openCities,         setOpenCities]        = useState(false);
@@ -72,6 +74,9 @@ const Navigation = () => {
   const desktopShow  = isLanding ? 'hidden md:flex'    : 'hidden lg:flex';
   const hamburgerShow = isLanding ? 'md:hidden'         : 'lg:hidden';
   const mobilePanel  = isLanding ? 'md:hidden'         : 'lg:hidden';
+
+  // Inside the signed-in app shell, the sidebar and top bar replace this.
+  if (inShell) return null;
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 glass">

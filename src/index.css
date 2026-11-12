@@ -67,6 +67,64 @@
     --background: 222 47% 6%;
     --foreground: 210 40% 98%;
   }
+
+  /* Light mode for the signed-in app (toggled in the top bar; the public
+     site keeps the dark brand look). Teal is deepened for contrast on white. */
+  html.light {
+    --background: 216 33% 97%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 174 84% 30%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 216 30% 93%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 216 30% 93%;
+    --muted-foreground: 215 16% 40%;
+
+    --accent: 174 84% 30%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 142 72% 29%;
+    --success-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 216 24% 86%;
+    --input: 216 24% 84%;
+    --ring: 174 84% 30%;
+
+    --gradient-hero: linear-gradient(180deg, hsl(216 33% 97%) 0%, hsl(216 33% 93%) 100%);
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(216 33% 98%));
+    --gradient-glow: radial-gradient(circle at center, hsl(174 84% 30% / 0.10), transparent 70%);
+    --shadow-glow: 0 0 40px hsl(174 84% 30% / 0.15);
+    --shadow-card: 0 1px 3px hsl(222 47% 11% / 0.06), 0 4px 16px hsl(222 47% 11% / 0.05);
+    --shadow-elevated: 0 8px 30px hsl(222 47% 11% / 0.10);
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 174 84% 30%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 216 30% 95%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 216 24% 88%;
+    --sidebar-ring: 174 84% 30%;
+
+    color-scheme: light;
+  }
+
+  html:not(.light) { color-scheme: dark; }
+
+  /* Cards read as raised surfaces on the light background. */
+  html.light .glass { box-shadow: var(--shadow-card); }
 }
 
 @layer base {
@@ -223,4 +281,19 @@
     opacity: 1; 
     transform: scale(1); 
   }
+}
+
+/* ── Signed-in app shell ──────────────────────────────────────────────
+   Pages were laid out under the old fixed top nav (pt-24). Inside the
+   shell the top bar is part of the flow, so pull their content up. */
+.app-shell-content > div > main,
+.app-shell-content > main {
+  padding-top: 1.75rem;
+}
+.app-shell-content .min-h-screen {
+  min-height: calc(100vh - 4rem);
+}
+@media print {
+  .app-shell-content { padding: 0 !important; }
+  .app-shell > div { padding-left: 0 !important; }
 }
