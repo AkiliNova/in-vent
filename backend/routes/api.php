@@ -92,6 +92,8 @@ Route::prefix('public')->group(function () {
 Route::post('webhooks/pesapal', [PaymentWebhookController::class, 'pesapal'])->name('webhooks.pesapal');
 Route::post('webhooks/mpesa', [PaymentWebhookController::class, 'mpesa'])->name('webhooks.mpesa');
 
+// GET answers provider "is this URL alive?" checks; reports arrive by POST.
+Route::get('webhooks/africastalking/delivery', fn () => response('ok', 200))->middleware('throttle:60,1');
 Route::post('webhooks/africastalking/delivery', \App\Http\Controllers\Api\SmsDeliveryController::class)->name('webhooks.africastalking.delivery')->middleware('throttle:600,1');
 Route::post('webhooks/telegram', TelegramWebhookController::class)->name('webhooks.telegram')->middleware('throttle:60,1');
 
