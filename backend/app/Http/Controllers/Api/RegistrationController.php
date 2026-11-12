@@ -67,14 +67,28 @@ class RegistrationController extends Controller
     }
 
     /** Today's door registrations for the event, newest first. */
-    public function index(Event $event): JsonResponse
+    /**
+     * Door registrations, a page at a time, with totals over all of them,
+     * not just the page, so "cash collected" is the real figure.
+     */
+    public function index(Request $request, Event $event): JsonResponse
     {
-        return response()->json(Order::query()
-            ->where('event_id', $event->id)
-            ->whereIn('provider', ['cash', 'complimentary'])
+        $door = fn () => Order::query()->where('event_id', $event->id)->whereIn('provider', ['cash', 'complimentary']);
+
+        $page = $door()
+            ->when(trim($request->string('search')->toString()), fn ($q, $s) => $q->where(fn ($w) => $w
+                ->where('buyer_name', 'like', "%{$s}%")->orWhere('buyer_phone', 'like', "%{$s}%")->orWhere('reference', 'like', "%{$s}%")))
             ->latest('id')
-            ->limit(100)
             ->withCount('tickets')
-            ->get(['id', 'reference', 'buyer_name', 'buyer_phone', 'total', 'provider', 'paid_at']));
+            ->paginate($request->integer('per_page', 25), ['id', 'reference', 'buyer_name', 'buyer_phone', 'total', 'provider', 'paid_at']);
+
+        return response()->json($page->toArray() + [
+            'summary' => [
+                'count' => $door()->count(),
+                'cash_total' => (float) $door()->where('provider', 'cash')->sum('total'),
+                'cash_count' => $door()->where('provider', 'cash')->count(),
+                'comp_count' => $door()->where('provider', 'complimentary')->count(),
+            ],
+        ]);
     }
 }

@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Search, Loader2, CheckCircle2, Users } from "lucide-react";
 import Navigation from "@/components/Navigation";
+import Pager from "@/components/Pager";
 import { Input } from "@/components/ui/input";
 import { api, kes, EventItem } from "@/lib/api";
+import { fetchAll, Page } from "@/lib/paging";
 
 interface Attendee {
   id: number;
@@ -21,30 +23,38 @@ export default function Guests() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [params] = useSearchParams();
   const [eventId, setEventId] = useState(params.get("event") || "");
-  const [rows, setRows] = useState<Attendee[]>([]);
-  const [total, setTotal] = useState(0);
+  const [list, setList] = useState<Page<Attendee> | null>(null);
+  const [page, setPage] = useState(1);
+  const [stats, setStats] = useState<{ registered: number; checked_in: number } | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const rows = list?.data ?? [];
 
   useEffect(() => {
-    api.get<{ data: EventItem[] }>("events?per_page=100").then((r) => {
-      setEvents(r.data);
-      if (r.data[0]) setEventId((current) => current || r.data[0].uuid);
-    });
+    fetchAll<EventItem>("events").then((all) => {
+      setEvents(all);
+      if (all[0]) setEventId((current) => current || all[0].uuid);
+    }).catch(() => {});
   }, []);
+
+  useEffect(() => { setPage(1); }, [eventId, search]);
+
+  // Headline numbers cover the whole event, not just the page on screen.
+  useEffect(() => {
+    if (!eventId) return;
+    api.get<{ registered: number; checked_in: number }>(`events/${eventId}/check-in/stats`).then(setStats).catch(() => setStats(null));
+  }, [eventId]);
 
   useEffect(() => {
     if (!eventId) return;
     setLoading(true);
     const t = window.setTimeout(() => {
-      api.get<{ data: Attendee[]; total: number }>(`events/${eventId}/attendees?per_page=200&search=${encodeURIComponent(search)}`)
-        .then((r) => { setRows(r.data); setTotal(r.total); })
+      api.get<Page<Attendee>>(`events/${eventId}/attendees?per_page=50&page=${page}&search=${encodeURIComponent(search)}`)
+        .then(setList)
         .finally(() => setLoading(false));
-    }, 250);
+    }, search ? 250 : 0);
     return () => window.clearTimeout(t);
-  }, [eventId, search]);
-
-  const checkedIn = rows.filter((r) => r.checked_in_at).length;
+  }, [eventId, search, page]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -54,7 +64,10 @@ export default function Guests() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-foreground">Guests</h1>
-              <p className="text-muted-foreground">{total} registered · {checkedIn} checked in{search ? " (filtered)" : ""}</p>
+              <p className="text-muted-foreground">
+                {(stats?.registered ?? list?.total ?? 0).toLocaleString()} registered · {(stats?.checked_in ?? 0).toLocaleString()} checked in
+                {search && list ? ` · ${list.total.toLocaleString()} match “${search}”` : ""}
+              </p>
             </div>
             <select value={eventId} onChange={(e) => setEventId(e.target.value)} aria-label="Event"
               className="h-10 rounded-md border border-input bg-background px-3 text-sm min-w-[220px]">
@@ -95,6 +108,7 @@ export default function Guests() {
               </table>
             )}
           </div>
+          <Pager page={list} onChange={(n) => { setPage(n); window.scrollTo({ top: 0, behavior: "smooth" }); }} noun="guests" />
         </div>
       </main>
     </div>

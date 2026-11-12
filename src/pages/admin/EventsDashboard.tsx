@@ -14,6 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import Navigation from "@/components/Navigation";
 import { toast } from "@/hooks/use-toast";
 import { api, errorMessage, kes, EventItem, TicketTier } from "@/lib/api";
+import { fetchAll, Page } from "@/lib/paging";
+import Pager from "@/components/Pager";
 
 interface TierDraft {
   id?: number;
@@ -75,15 +77,18 @@ const EventsDashboard = () => {
   const [removedTierIds, setRemovedTierIds] = useState<string[]>([]);
   const [cover, setCover] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<Page<AdminEvent> | null>(null);
 
   const load = async () => {
     try {
-      const q = new URLSearchParams({ per_page: "100" });
+      const q = new URLSearchParams({ per_page: "24", page: String(page) });
       if (search) q.set("search", search);
       if (statusFilter) q.set("status", statusFilter);
       if (orgFilter) q.set("tenant_id", orgFilter);
-      const res = await api.get<{ data: AdminEvent[] }>(`events?${q}`);
+      const res = await api.get<Page<AdminEvent>>(`events?${q}`);
       setEvents(res.data);
+      setPaging(res);
     } catch (e) {
       toast({ title: "Couldn't load events", description: errorMessage(e), variant: "destructive" });
     } finally {
@@ -91,15 +96,17 @@ const EventsDashboard = () => {
     }
   };
 
+  useEffect(() => { setPage(1); }, [search, statusFilter, orgFilter]);
+
   useEffect(() => {
-    const t = window.setTimeout(load, 250);
+    const t = window.setTimeout(load, search ? 250 : 0);
     return () => window.clearTimeout(t);
-  }, [search, statusFilter, orgFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, statusFilter, orgFilter, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isAdmin) return;
-    api.get<{ data: { id: number; organization_name: string }[] }>("admin/organisers?per_page=500&include_legacy=1")
-      .then((r) => setOrganisers(r.data)).catch(() => {});
+    fetchAll<{ id: number; organization_name: string }>("admin/organisers?include_legacy=1")
+      .then((all) => setOrganisers([...all].sort((a, b) => a.organization_name.localeCompare(b.organization_name)))).catch(() => {});
   }, [isAdmin]);
 
   const setStatus = async (ev: AdminEvent, status: string, label: string) => {
@@ -342,6 +349,7 @@ const EventsDashboard = () => {
               ))}
             </div>
           )}
+          <Pager page={paging} onChange={(n) => { setPage(n); window.scrollTo({ top: 0, behavior: "smooth" }); }} noun="events" className="mt-6" />
         </div>
       </main>
 

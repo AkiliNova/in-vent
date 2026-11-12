@@ -10,6 +10,19 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { api, errorMessage, kes } from "@/lib/api";
+import { Page } from "@/lib/paging";
+import Pager from "@/components/Pager";
+
+interface Entry { id: number; type: string; amount: string; description: string; created_at: string; event?: { title: string } }
+interface PayoutRow { id: number; net_amount: string; destination_account: string; status: string; due_at: string | null; mpesa_receipt: string | null; result_desc: string | null; created_at: string }
+
+const PER_PAGE = 25;
+
+/** The wallet endpoint embeds page 1; describe it as a Page so the pager knows how many there are. */
+const firstPage = <T,>(rows: T[], total: number): Page<T> => ({
+  data: rows, current_page: 1, per_page: PER_PAGE, total,
+  last_page: Math.max(1, Math.ceil(total / PER_PAGE)), from: rows.length ? 1 : null, to: rows.length || null,
+});
 
 interface WalletData {
   summary: { balance: number; gross_sales: number; platform_fees: number; withdrawn: number; in_flight: number };
@@ -18,8 +31,10 @@ interface WalletData {
   payout_name: string | null;
   min_withdrawal: number;
   payout_hours: number;
-  entries: { id: number; type: string; amount: string; description: string; created_at: string; event?: { title: string } }[];
-  payouts: { id: number; net_amount: string; destination_account: string; status: string; due_at: string | null; mpesa_receipt: string | null; result_desc: string | null; created_at: string }[];
+  entries: Entry[];
+  entries_total: number;
+  payouts: PayoutRow[];
+  payouts_total: number;
   by_event: { event_id: number; gross: string; fees: string; net: string; event: { title: string; start_date: string } }[];
 }
 
@@ -43,9 +58,22 @@ export default function Payouts() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"activity" | "withdrawals" | "events">("activity");
+  const [entries, setEntries] = useState<Page<Entry> | null>(null);
+  const [payouts, setPayouts] = useState<Page<PayoutRow> | null>(null);
 
-  const load = () => api.get<WalletData>("wallet").then(setData).catch((e) =>
+  const load = () => api.get<WalletData>("wallet").then((d) => {
+    setData(d);
+    setEntries(firstPage(d.entries, d.entries_total ?? d.entries.length));
+    setPayouts(firstPage(d.payouts, d.payouts_total ?? d.payouts.length));
+  }).catch((e) =>
     toast({ title: "Couldn't load wallet", description: errorMessage(e), variant: "destructive" }));
+
+  const goEntries = (n: number) => n === 1 && data
+    ? setEntries(firstPage(data.entries, data.entries_total))
+    : api.get<Page<Entry>>(`wallet/entries?per_page=${PER_PAGE}&page=${n}`).then(setEntries).catch(() => {});
+  const goPayouts = (n: number) => n === 1 && data
+    ? setPayouts(firstPage(data.payouts, data.payouts_total))
+    : api.get<Page<PayoutRow>>(`wallet/withdrawals?per_page=${PER_PAGE}&page=${n}`).then(setPayouts).catch(() => {});
 
   useEffect(() => { load(); }, []);
 
@@ -162,9 +190,9 @@ export default function Payouts() {
             </div>
 
             <div className="divide-y divide-border">
-              {tab === "activity" && (data.entries.length === 0
+              {tab === "activity" && (!entries?.data.length
                 ? <p className="p-8 text-center text-muted-foreground text-sm">No sales yet. Publish an event and share the link.</p>
-                : data.entries.map((e) => (
+                : entries.data.map((e) => (
                   <div key={e.id} className="flex justify-between items-center px-5 py-3 text-sm">
                     <div className="min-w-0">
                       <div className="text-foreground truncate">{e.description}</div>
@@ -176,9 +204,9 @@ export default function Payouts() {
                   </div>
                 )))}
 
-              {tab === "withdrawals" && (data.payouts.length === 0
+              {tab === "withdrawals" && (!payouts?.data.length
                 ? <p className="p-8 text-center text-muted-foreground text-sm">No withdrawals yet.</p>
-                : data.payouts.map((p) => (
+                : payouts.data.map((p) => (
                   <div key={p.id} className="flex justify-between items-center px-5 py-3 text-sm gap-3">
                     <div className="min-w-0">
                       <div className="text-foreground">To {p.destination_account}{p.mpesa_receipt ? ` · ${p.mpesa_receipt}` : ""}</div>
@@ -202,6 +230,8 @@ export default function Payouts() {
                   </div>
                 )))}
             </div>
+            {tab === "activity" && <Pager page={entries} onChange={goEntries} noun="entries" className="px-5 py-3 border-t border-border" />}
+            {tab === "withdrawals" && <Pager page={payouts} onChange={goPayouts} noun="withdrawals" className="px-5 py-3 border-t border-border" />}
           </div>
         </div>
       </main>

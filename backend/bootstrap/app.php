@@ -41,6 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
          */
         $middleware->group('api', [
             ResolveTenant::class,
+            \App\Http\Middleware\ClampPerPage::class,
             ThrottleRequests::class.':api',
             SubstituteBindings::class,
         ]);

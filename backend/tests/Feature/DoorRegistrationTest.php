@@ -61,6 +61,15 @@ class DoorRegistrationTest extends TestCase
         $this->register()->assertCreated();
         $this->register(['name' => 'Second Guest'])->assertCreated();
 
-        $this->assertCount(2, $this->getJson("/api/events/{$this->event->uuid}/registrations")->json());
+        $this->getJson("/api/events/{$this->event->uuid}/registrations")
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('total', 2)
+            ->assertJsonPath('summary.count', 2);
+
+        // Paged, but the summary still covers every registration.
+        $this->getJson("/api/events/{$this->event->uuid}/registrations?per_page=1")
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('last_page', 2)
+            ->assertJsonPath('summary.count', 2);
     }
 }

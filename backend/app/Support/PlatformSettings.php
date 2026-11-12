@@ -45,6 +45,7 @@ class PlatformSettings
                 'fields' => [
                     ['key' => 'services.sms.provider', 'label' => 'Provider', 'type' => 'select', 'options' => ['advanta' => 'Advanta', 'africastalking' => 'Africa\'s Talking'], 'default' => 'advanta'],
                     ['key' => 'services.sms.cost_per_segment', 'label' => 'Cost per SMS part (KES)', 'type' => 'number', 'min' => 0, 'help' => 'Used for campaign cost estimates.'],
+                    ['key' => 'services.sms.countries', 'label' => 'Countries you can text', 'type' => 'text', 'default' => '254', 'help' => 'Country codes, comma-separated (e.g. 254,256,255). Other numbers are flagged unsupported and skipped. * = any.'],
                     ['key' => 'services.africastalking.username', 'label' => 'Africa\'s Talking username', 'type' => 'text', 'provider' => 'africastalking', 'help' => 'Use "sandbox" with a sandbox API key to test without sending.'],
                     ['key' => 'services.africastalking.api_key', 'label' => 'Africa\'s Talking API key', 'type' => 'secret', 'provider' => 'africastalking'],
                     ['key' => 'services.africastalking.sender_id', 'label' => 'Sender ID', 'type' => 'text', 'provider' => 'africastalking', 'help' => 'Your approved alphanumeric sender (e.g. TIKOOH). Empty = AT\'s shared shortcode.'],

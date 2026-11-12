@@ -20,6 +20,7 @@ class Campaign extends Model
     {
         return [
             'audience_filter' => 'array',
+            'monitor_numbers' => 'array',
             'estimated_cost' => 'decimal:2',
             'scheduled_for' => 'datetime',
             'started_at' => 'datetime',
@@ -46,6 +47,12 @@ class Campaign extends Model
     public function recipients(): HasMany
     {
         return $this->hasMany(CampaignRecipient::class);
+    }
+
+    /** The sender's own confirmation copies. */
+    public function monitors(): HasMany
+    {
+        return $this->hasMany(CampaignRecipient::class)->where('is_monitor', true);
     }
 
     public function scopeDue(Builder $query): Builder

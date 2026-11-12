@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { api, errorMessage, kes } from "@/lib/api";
+import { Page } from "@/lib/paging";
+import Pager from "@/components/Pager";
 
 interface Organiser {
   id: number;
@@ -41,23 +43,27 @@ const maskPhone = (p: string) => p.length > 6 ? `${p.slice(0, 4)}***${p.slice(-3
 
 export default function AdminOrganisers() {
   const { user } = useAuth();
-  const [rows, setRows] = useState<Organiser[] | null>(null);
-  const [total, setTotal] = useState(0);
+  const [list, setList] = useState<Page<Organiser> | null>(null);
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("");
   const [feeFor, setFeeFor] = useState<Organiser | null>(null);
   const [fee, setFee] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
+  const rows = list?.data ?? null;
+  const total = list?.total ?? 0;
 
-  const load = () => api.get<{ data: Organiser[]; total: number }>(
-    `admin/organisers?per_page=100&search=${encodeURIComponent(search)}&filter=${filter}`
-  ).then((r) => { setRows(r.data); setTotal(r.total); }).catch((e) =>
+  const load = () => api.get<Page<Organiser>>(
+    `admin/organisers?per_page=50&page=${page}&search=${encodeURIComponent(search)}&filter=${filter}`
+  ).then(setList).catch((e) =>
     toast({ title: "Couldn't load organisers", description: errorMessage(e), variant: "destructive" }));
 
+  useEffect(() => { setPage(1); }, [search, filter]);
+
   useEffect(() => {
-    const t = window.setTimeout(load, 250);
+    const t = window.setTimeout(load, search ? 250 : 0);
     return () => window.clearTimeout(t);
-  }, [search, filter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, filter, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (user?.role !== "super_admin") return <Navigate to="/dashboard" replace />;
 
@@ -172,6 +178,7 @@ export default function AdminOrganisers() {
               </table>
             )}
           </div>
+          <Pager page={list} onChange={setPage} noun="organisers" />
         </div>
       </main>
 

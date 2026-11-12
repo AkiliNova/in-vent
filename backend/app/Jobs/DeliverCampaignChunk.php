@@ -7,6 +7,7 @@ use App\Models\Campaign;
 use App\Models\CampaignRecipient;
 use App\Models\MessageLog;
 use App\Services\Sms\Sms;
+use App\Services\Sms\SmsMessage;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -56,7 +57,7 @@ class DeliverCampaignChunk implements ShouldQueue
         $client = Sms::client($campaign->tenant_id)->about('campaign', 'campaign', $campaign->id);
 
         // Personalise per recipient, so each goes out as its own request.
-        foreach ($recipients as $recipient) {
+        foreach ($recipients as $i => $recipient) {
             $body = $this->personalise($campaign->body, $recipient);
 
             $outcome = $client->send([$recipient->destination], $body);
@@ -66,11 +67,27 @@ class DeliverCampaignChunk implements ShouldQueue
                     'status' => 'sent',
                     'sent_at' => now(),
                     'provider_reference' => data_get($outcome, 'results.0.reference'),
+                    'cost' => $this->amount(data_get($outcome, 'results.0.cost')),
                 ]
                 : [
                     'status' => 'failed',
                     'error' => data_get($outcome, 'failed.0.error', 'Delivery failed'),
                 ]);
+
+            // Out of credit: every further request would fail the same way.
+            if (data_get($outcome, 'failed.0.code') === 'InsufficientBalance') {
+                // The whole campaign, not just this chunk: the batch is
+                // cancelled, so other chunks won't get to theirs.
+                CampaignRecipient::where('campaign_id', $campaign->id)
+                    ->where('status', 'queued')
+                    ->update(['status' => 'failed', 'error' => 'InsufficientBalance', 'updated_at' => now()]);
+
+                $this->batch()?->cancel();
+
+                Log::warning('Campaign stopped: SMS balance exhausted', ['campaign' => $campaign->id]);
+
+                return;
+            }
         }
     }
 
@@ -113,15 +130,20 @@ class DeliverCampaignChunk implements ShouldQueue
     protected function personalise(string $text, CampaignRecipient $recipient): string
     {
         $attendee = $recipient->attendee;
-        $first = $recipient->first_name ?: $attendee?->first_name;
-        $last = $recipient->last_name ?: $attendee?->last_name;
 
-        return strtr($text, [
-            '{{first_name}}' => $first ?: 'there',
-            '{{last_name}}' => $last ?? '',
-            '{{name}}' => trim($first.' '.$last) ?: 'there',
-            '{{company}}' => $attendee?->company ?? '',
-            '{{category}}' => $attendee?->category ?? '',
-        ]);
+        // Same fill as the credit estimate, so the count matches what's billed.
+        return SmsMessage::personalise(
+            $text,
+            $recipient->first_name ?: $attendee?->first_name,
+            $recipient->last_name ?: $attendee?->last_name,
+            $attendee?->company,
+            $attendee?->category,
+        );
+    }
+
+    /** "KES 0.8000" → 0.8 */
+    protected function amount(mixed $cost): float
+    {
+        return preg_match('/(-?[\d.]+)/', (string) $cost, $m) ? (float) $m[1] : 0.0;
     }
 }

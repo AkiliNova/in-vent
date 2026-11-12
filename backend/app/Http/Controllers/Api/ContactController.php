@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Attendee;
 use App\Models\Contact;
+use App\Models\Tenant;
 use App\Services\CampaignAudience;
 use App\Support\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Past guests who never booked on Tikooh — imported from a CSV export of an
@@ -18,51 +21,113 @@ class ContactController extends Controller
     /** Header spellings people actually use, mapped to our fields. */
     protected const HEADERS = [
         'email' => ['email', 'e-mail', 'email address', 'e-mail address', 'mail'],
-        'phone' => ['phone', 'phone number', 'mobile', 'mobile number', 'msisdn', 'tel', 'telephone', 'cell', 'whatsapp'],
+        'phone' => ['phone', 'phones', 'phone number', 'phone numbers', 'phone no', 'phone no.', 'mobile', 'mobile number', 'mobile no', 'msisdn', 'tel', 'tel no', 'telephone', 'cell', 'whatsapp', 'contact', 'contacts', 'number', 'numbers'],
         'first_name' => ['first name', 'firstname', 'first_name', 'given name', 'fname'],
         'last_name' => ['last name', 'lastname', 'last_name', 'surname', 'family name', 'lname'],
-        'name' => ['name', 'full name', 'fullname', 'full_name', 'attendee', 'guest', 'customer'],
+        'name' => ['name', 'names', 'full name', 'full names', 'fullname', 'full_name', 'attendee', 'guest', 'guests', 'customer'],
     ];
 
+    /**
+     * Everyone an organiser can reach: registered attendees (one row per
+     * person, however many events they came to) plus imported contacts.
+     * Attendees are read live, not copied, so the list never goes stale and
+     * campaigns don't count anyone twice.
+     *
+     * type: all (default) | attendees | imported
+     */
     public function index(Request $request): JsonResponse
     {
         $search = trim($request->string('q')->toString());
+        $type = $request->string('type')->toString() ?: 'all';
+        $tenantId = $this->tenantFor($request, required: false);
+        $like = '%'.addcslashes($search, '%_\\').'%';
 
-        $page = Contact::query()
-            ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
-                ->where('email', 'like', "%{$search}%")
-                ->orWhere('phone', 'like', "%{$search}%")
-                ->orWhere('first_name', 'like', "%{$search}%")
-                ->orWhere('last_name', 'like', "%{$search}%")))
-            ->latest('id')
+        $matches = fn ($q) => $q->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
+            ->where('email', 'like', $like)
+            ->orWhere('phone', 'like', $like)
+            ->orWhere('first_name', 'like', $like)
+            ->orWhere('last_name', 'like', $like)));
+
+        $imported = Contact::withoutGlobalScope('tenant')
+            ->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId))
+            ->tap($matches)
+            ->selectRaw("id, 'contact' as kind, first_name, last_name, email, phone, source, 0 as events_count, created_at");
+
+        // One row per person: attendees are unique per event + email.
+        $attendees = Attendee::withoutGlobalScope('tenant')
+            ->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId))
+            ->tap($matches)
+            ->selectRaw("MIN(id) as id, 'attendee' as kind, MAX(first_name) as first_name, MAX(last_name) as last_name, LOWER(email) as email, MAX(phone) as phone, NULL as source, COUNT(*) as events_count, MAX(created_at) as created_at")
+            ->groupByRaw('LOWER(email)');
+
+        $union = match ($type) {
+            'imported' => $imported->toBase(),
+            'attendees' => $attendees->toBase(),
+            default => $attendees->toBase()->unionAll($imported->toBase()),
+        };
+
+        $page = DB::query()->fromSub($union, 'people')
+            ->orderByDesc('created_at')->orderByDesc('id')
             ->paginate($request->integer('per_page', 25));
 
-        return response()->json($page);
+        // Walk-ins and phone-only imports carry a made-up email; don't show it.
+        $page->getCollection()->transform(function ($row) {
+            $row->email = $row->email && ! Attendee::isPlaceholderEmail($row->email) ? $row->email : null;
+            $row->events_count = (int) $row->events_count;
+
+            return $row;
+        });
+
+        return response()->json($page->toArray() + [
+            'imported_total' => Contact::withoutGlobalScope('tenant')->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId))->count(),
+            'attendee_total' => (int) Attendee::withoutGlobalScope('tenant')->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId))
+                ->selectRaw('COUNT(DISTINCT LOWER(email)) as n')->value('n'),
+        ]);
     }
 
     public function import(Request $request): JsonResponse
     {
         $request->validate([
-            'file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            'file' => ['required', 'file', 'mimes:csv,txt,tsv', 'max:10240'],
             'source' => ['nullable', 'string', 'max:255'],
+            'tenant_id' => ['nullable', 'integer'],
         ]);
 
-        $tenantId = TenantContext::id() ?? $request->user()->tenant_id;
+        $tenantId = $this->tenantFor($request);
         $source = $request->input('source') ?: $request->file('file')->getClientOriginalName();
 
         $handle = fopen($request->file('file')->getRealPath(), 'r');
         $first = fgets($handle);
         // Excel saves CSVs with a BOM, and in some locales with semicolons.
         $first = preg_replace('/^\xEF\xBB\xBF/', '', (string) $first);
-        $delimiter = substr_count($first, ';') > substr_count($first, ',') ? ';' : ',';
+        $counts = [',' => substr_count($first, ','), ';' => substr_count($first, ';'), "\t" => substr_count($first, "\t")];
+        arsort($counts);
+        $delimiter = array_key_first($counts);
         $header = str_getcsv($first, $delimiter);
         $map = $this->mapColumns($header);
 
-        // No recognisable header: treat the first line as data and guess.
+        // No email/phone header. Either the first line is already data, or it's
+        // a header with labels we don't know — guess from the rows that follow.
         $pending = [];
         if (! isset($map['email']) && ! isset($map['phone'])) {
-            $map = $this->guessColumns($header);
-            $pending[] = $header;
+            $guess = $this->guessColumns($header);
+
+            if (isset($guess['email']) || isset($guess['phone'])) {
+                $map = $guess;
+                $pending[] = $header;
+            } else {
+                for ($i = 0; $i < 5 && ($line = fgetcsv($handle, 0, $delimiter)) !== false; $i++) {
+                    $pending[] = $line;
+                }
+
+                foreach ($pending as $line) {
+                    $guess = $this->guessColumns($line);
+                    if (isset($guess['email']) || isset($guess['phone'])) {
+                        $map = $guess + $map;
+                        break;
+                    }
+                }
+            }
         }
 
         if (! isset($map['email']) && ! isset($map['phone'])) {
@@ -96,6 +161,27 @@ class ContactController extends Controller
         return response()->json(null, 204);
     }
 
+    /**
+     * Whose contacts these are. Organisers always get their own account; a
+     * super admin picks the organiser (tenant_id, or the impersonation header).
+     */
+    protected function tenantFor(Request $request, bool $required = true): ?int
+    {
+        $user = $request->user();
+
+        if ($user->isSuperAdmin() && $request->filled('tenant_id')) {
+            $tenant = TenantContext::withoutScoping(fn () => Tenant::find($request->integer('tenant_id')));
+            abort_if($tenant === null, 422, 'That organiser no longer exists.');
+
+            return $tenant->id;
+        }
+
+        $id = TenantContext::id() ?? $user->tenant_id;
+        abort_if($required && $id === null, 422, 'Choose which organiser these contacts belong to.');
+
+        return $id;
+    }
+
     protected function importRow(int $tenantId, string $source, array $line, array $map, array &$stats): void
     {
         $get = fn (string $key) => isset($map[$key]) ? trim((string) ($line[$map[$key]] ?? '')) : '';
@@ -112,8 +198,11 @@ class ContactController extends Controller
         $first = $get('first_name');
         $last = $get('last_name');
 
-        if ($first === '' && $get('name') !== '') {
-            [$first, $last] = array_pad(preg_split('/\s+/', $get('name'), 2), 2, '');
+        // Sign-up sheets often number their rows: "1. Annet", "2.Femina".
+        $name = trim((string) preg_replace('/^\d+\s*[.)\-]\s*/', '', $get('name')));
+
+        if ($first === '' && $name !== '') {
+            [$first, $last] = array_pad(preg_split('/\s+/', $name, 2), 2, '');
         }
 
         $contact = Contact::withoutGlobalScope('tenant')

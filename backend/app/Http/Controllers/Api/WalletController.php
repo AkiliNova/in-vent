@@ -30,18 +30,11 @@ class WalletController extends Controller
             'payout_name' => $tenant->payout_name,
             'min_withdrawal' => (float) config('tikooh.min_withdrawal'),
             'payout_hours' => (int) config('tikooh.payout_hours'),
-            'entries' => WalletEntry::query()
-                ->with('event:id,uuid,title')
-                ->latest('id')
-                ->limit(100)
-                ->get(['id', 'event_id', 'order_id', 'payout_id', 'type', 'amount', 'currency', 'description', 'created_at']),
-            'payouts' => Payout::query()
-                ->latest('id')
-                ->limit(50)
-                ->get(['id', 'net_amount', 'currency', 'destination_account', 'status', 'due_at', 'mpesa_receipt', 'result_desc', 'paid_at', 'created_at'])
-                ->map(fn (Payout $p) => array_merge($p->toArray(), [
-                    'destination_account' => WalletService::maskPhone((string) $p->destination_account),
-                ])),
+            // First pages only; older history comes from wallet/entries and wallet/withdrawals.
+            'entries' => $this->entriesQuery()->limit(25)->get(),
+            'entries_total' => WalletEntry::query()->count(),
+            'payouts' => $this->payoutsQuery()->limit(25)->get()->map(fn (Payout $p) => $this->presentPayout($p)),
+            'payouts_total' => Payout::query()->count(),
             'by_event' => WalletEntry::query()
                 ->whereNotNull('event_id')
                 ->with('event:id,uuid,title,start_date')
@@ -49,6 +42,43 @@ class WalletController extends Controller
                 ->groupBy('event_id')
                 ->get(),
         ]);
+    }
+
+    /** The whole ledger, a page at a time. */
+    public function entries(Request $request): JsonResponse
+    {
+        return response()->json($this->entriesQuery()
+            ->when($request->string('type')->toString(), fn ($q, $t) => $q->where('type', $t))
+            ->paginate($request->integer('per_page', 25)));
+    }
+
+    /** Every withdrawal request, a page at a time. */
+    public function withdrawals(Request $request): JsonResponse
+    {
+        $page = $this->payoutsQuery()->paginate($request->integer('per_page', 25));
+        $page->getCollection()->transform(fn (Payout $p) => $this->presentPayout($p));
+
+        return response()->json($page);
+    }
+
+    protected function entriesQuery()
+    {
+        return WalletEntry::query()
+            ->with('event:id,uuid,title')
+            ->latest('id')
+            ->select(['id', 'event_id', 'order_id', 'payout_id', 'type', 'amount', 'currency', 'description', 'created_at']);
+    }
+
+    protected function payoutsQuery()
+    {
+        return Payout::query()
+            ->latest('id')
+            ->select(['id', 'net_amount', 'currency', 'destination_account', 'status', 'due_at', 'mpesa_receipt', 'result_desc', 'paid_at', 'created_at']);
+    }
+
+    protected function presentPayout(Payout $p): array
+    {
+        return array_merge($p->toArray(), ['destination_account' => WalletService::maskPhone((string) $p->destination_account)]);
     }
 
     /**
@@ -110,12 +140,28 @@ class WalletController extends Controller
         return response()->json(TenantContext::withoutScoping(fn () => [
             'b2c_lock' => MpesaGateway::initiatorLock(),
             'queue' => $columns(Payout::query())->whereIn('status', ['requested', 'processing'])->orderBy('due_at')->get(),
-            'recent' => $columns(Payout::query())->whereNotIn('status', ['requested', 'processing'])->latest('id')->limit(50)->get(),
+            // First page; the rest via admin/payouts/recent.
+            'recent' => $columns(Payout::query())->whereNotIn('status', ['requested', 'processing'])->latest('id')->limit(25)->get(),
+            'recent_total' => Payout::whereNotIn('status', ['requested', 'processing'])->count(),
             'totals' => [
                 'requested' => (float) Payout::where('status', 'requested')->sum('net_amount'),
                 'processing' => (float) Payout::where('status', 'processing')->sum('net_amount'),
             ],
         ]));
+    }
+
+    /** Admin: settled payouts (paid, rejected, cancelled, failed), a page at a time. */
+    public function adminPayoutHistory(Request $request): JsonResponse
+    {
+        return response()->json(TenantContext::withoutScoping(fn () => Payout::query()
+            ->with('tenant:id,organization_name,payout_name')
+            ->whereNotIn('status', ['requested', 'processing'])
+            ->when($request->string('status')->toString(), fn ($q, $s) => $q->where('status', $s))
+            ->latest('id')
+            ->paginate($request->integer('per_page', 25), [
+                'id', 'tenant_id', 'net_amount', 'destination_account', 'status', 'due_at',
+                'payment_method', 'mpesa_receipt', 'result_code', 'result_desc', 'approved_at', 'paid_at', 'created_at',
+            ])));
     }
 
     /** Send by B2C — after the B2C shortcode has been funded. */

@@ -92,6 +92,7 @@ Route::prefix('public')->group(function () {
 Route::post('webhooks/pesapal', [PaymentWebhookController::class, 'pesapal'])->name('webhooks.pesapal');
 Route::post('webhooks/mpesa', [PaymentWebhookController::class, 'mpesa'])->name('webhooks.mpesa');
 
+Route::post('webhooks/africastalking/delivery', \App\Http\Controllers\Api\SmsDeliveryController::class)->name('webhooks.africastalking.delivery')->middleware('throttle:600,1');
 Route::post('webhooks/telegram', TelegramWebhookController::class)->name('webhooks.telegram')->middleware('throttle:60,1');
 
 // Registered with Safaricom, which rejects any URL containing "mpesa" — hence "daraja".
@@ -291,6 +292,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('merchant', [MerchantController::class, 'update']);
         Route::put('merchant/payout', [MerchantController::class, 'updatePayout'])->middleware('throttle:5,1');
         Route::get('wallet', [WalletController::class, 'show']);
+        Route::get('wallet/entries', [WalletController::class, 'entries']);
+        Route::get('wallet/withdrawals', [WalletController::class, 'withdrawals']);
         Route::post('wallet/withdraw', [WalletController::class, 'withdraw'])->middleware('throttle:5,1');
         Route::post('wallet/withdrawals/{payout}/cancel', [WalletController::class, 'cancel']);
 
@@ -298,6 +301,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('campaigns', [CampaignController::class, 'index']);
         Route::post('campaigns', [CampaignController::class, 'store']);
         Route::post('campaigns/audience', [CampaignController::class, 'audience']);
+        Route::post('campaigns/audience/people', [CampaignController::class, 'people']);
+        Route::post('campaigns/audience/facets', [CampaignController::class, 'facets']);
+        Route::get('campaigns/sms-status', [CampaignController::class, 'smsStatus']);
         Route::post('campaigns/image', [CampaignController::class, 'uploadImage']);
         Route::put('campaigns/{campaign}', [CampaignController::class, 'update']);
         Route::delete('campaigns/{campaign}', [CampaignController::class, 'destroy']);
@@ -322,15 +328,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('payouts/{payout}/history', [MessageLogController::class, 'payoutHistory'])->whereNumber('payout');
         Route::get('settings', [AdminSettingsController::class, 'index']);
         Route::put('settings', [AdminSettingsController::class, 'update']);
+        Route::post('sms/check-numbers', [CampaignController::class, 'checkNumbers'])->middleware('throttle:30,1');
+        Route::get('sms/flags', [CampaignController::class, 'flaggedNumbers']);
+        Route::delete('sms/flags/{flag}', [CampaignController::class, 'unflagNumber'])->whereNumber('flag');
         Route::post('settings/test/{channel}', [AdminSettingsController::class, 'test'])->whereIn('channel', ['email', 'sms', 'telegram'])->middleware('throttle:10,1');
         Route::get('templates/{template}/preview', [AdminSettingsController::class, 'preview'])->whereIn('template', ['ticket', 'campaign']);
         Route::get('dashboard', [AdminController::class, 'overview']);
         Route::get('organisers', [AdminController::class, 'organisers']);
         Route::get('organisers/{tenant}', [AdminController::class, 'organiser'])->whereNumber('tenant');
+        Route::get('organisers/{tenant}/{section}', [AdminController::class, 'organiserSection'])->whereNumber('tenant')->whereIn('section', ['orders', 'payouts', 'campaigns', 'messages', 'activity']);
         Route::put('organisers/{tenant}', [AdminController::class, 'updateOrganiser'])->whereNumber('tenant');
         Route::get('payments/unmatched', [WalletController::class, 'unmatchedC2b']);
         Route::get('payouts/pending', [WalletController::class, 'pendingPayouts']);
         Route::get('payouts', [WalletController::class, 'adminPayouts']);
+        Route::get('payouts/recent', [WalletController::class, 'adminPayoutHistory']);
 
         Route::get('blog', [BlogController::class, 'index']);
         Route::post('blog', [BlogController::class, 'store']);

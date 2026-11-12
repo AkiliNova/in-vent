@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { api, errorMessage, kes, EventItem } from "@/lib/api";
+import { fetchAll } from "@/lib/paging";
 
 interface Promo {
   id: number;
@@ -39,9 +40,9 @@ export default function PromoCodes() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.get<{ data: EventItem[] }>("events?per_page=100").then((r) => {
-      setEvents(r.data);
-      if (r.data[0]) setEventId(r.data[0].uuid);
+    fetchAll<EventItem>("events").then((all) => {
+      setEvents(all);
+      if (all[0]) setEventId(all[0].uuid);
       else setPromos([]);
     });
   }, []);

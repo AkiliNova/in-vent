@@ -1,20 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus, Send, Loader2, Mail, MessageSquare, Users, Upload, Trash2, Clock, FlaskConical,
-  Megaphone, Globe2, CalendarDays, CheckCircle2, ImagePlus, X, Search, Pencil,
+  Megaphone, ImagePlus, X, Search, Pencil, Smartphone, Wallet, AlertTriangle, Wand2,
 } from "lucide-react";
+import AudienceBuilder from "@/components/campaigns/AudienceBuilder";
+import SmsAccountDialog from "@/components/campaigns/SmsAccountDialog";
+import { analyseSms, AudienceFilter, AudienceSummary, SmsStatus, toGsm } from "@/lib/sms";
 import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { api, errorMessage, kes, EventItem } from "@/lib/api";
+import { fetchAll, Page } from "@/lib/paging";
+import Pager from "@/components/Pager";
 
-type Source = "all" | "event" | "platform";
 
 interface Campaign {
   id: number;
@@ -29,7 +32,9 @@ interface Campaign {
   image_path: string | null;
   cta_label: string | null;
   cta_url: string | null;
-  audience_filter: { source?: Source; checked_in?: boolean; include_contacts?: boolean } | null;
+  audience_filter: Partial<AudienceFilter> | null;
+  monitor_numbers: string[] | null;
+  monitors?: { destination: string; status: string; error: string | null; delivered_at: string | null }[];
   recipient_count: number;
   sent_count: number;
   failed_count: number;
@@ -41,21 +46,37 @@ interface Campaign {
   featured_event?: { id: number; uuid: string; title: string } | null;
 }
 
-interface Audience {
-  recipient_count: number;
-  segments_per_message: number;
-  estimated_cost: number;
-  sample: { name: string; destination: string }[];
+interface Contact {
+  id: number;
+  kind: "attendee" | "contact";
+  email: string | null;
+  phone: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  source: string | null;
+  events_count: number;
 }
 
-interface Contact { id: number; email: string | null; phone: string | null; first_name: string | null; last_name: string | null; source: string | null }
-
 const blank = {
-  name: "", channel: "email" as "email" | "sms", source: "all" as Source, event_id: "", checked_in: false,
-  include_contacts: true, featured_event_id: "", subject: "", body: "", image_path: "", image_url: "",
+  name: "", channel: "email" as "email" | "sms", featured_event_id: "", subject: "", body: "", image_path: "", image_url: "",
   cta_label: "", cta_url: "",
+  filter: { source: "all", include_contacts: true } as AudienceFilter,
+  /** Up to three of your own numbers that get every SMS first. */
+  monitors: [] as string[],
 };
 type Form = typeof blank;
+
+/** Older campaigns saved checked_in/event_id; map them onto the current filter. */
+function filterFrom(c: Campaign): AudienceFilter {
+  const f = { ...(c.audience_filter ?? {}) } as AudienceFilter;
+  f.source = f.source ?? (c.event_id ? "event" : "all");
+  if (f.checked_in && !f.attendance) f.attendance = "checked_in";
+  delete f.checked_in;
+  if (f.source === "event" && !f.event_ids?.length && c.event_id) f.event_ids = [c.event_id];
+  return f;
+}
+
+const STATUS_COPY: Record<string, string> = { delivered: "delivered ✓", sent: "sent, awaiting delivery report", failed: "failed", queued: "queued", skipped: "skipped" };
 
 const TAGS = ["{{first_name}}", "{{name}}"];
 
@@ -84,15 +105,22 @@ export default function Campaigns() {
   const [contactsOpen, setContactsOpen] = useState(false);
   const [confirm, setConfirm] = useState<Campaign | null>(null);
   const [scheduling, setScheduling] = useState<Campaign | null>(null);
+  const [sms, setSms] = useState<SmsStatus | null>(null);
+  const [smsOpen, setSmsOpen] = useState(false);
 
-  const load = () => api.get<{ data: Campaign[] }>("campaigns?per_page=50").then((r) => setCampaigns(r.data))
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<Page<Campaign> | null>(null);
+  const load = () => api.get<Page<Campaign>>(`campaigns?per_page=20&page=${page}`).then((r) => { setCampaigns(r.data); setPaging(r); })
     .catch((e) => toast({ title: "Couldn't load campaigns", description: errorMessage(e), variant: "destructive" }));
-  const loadContacts = () => api.get<{ total: number }>("contacts?per_page=1").then((r) => setContactTotal(r.total)).catch(() => {});
+  useEffect(() => { if (paging) load(); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadContacts = () => api.get<{ imported_total: number }>("contacts?per_page=1").then((r) => setContactTotal(r.imported_total)).catch(() => {});
+  const loadSms = () => api.get<SmsStatus>("campaigns/sms-status").then(setSms).catch(() => {});
 
   useEffect(() => {
     load();
     loadContacts();
-    api.get<{ data: EventItem[] }>("events?per_page=100").then((r) => setEvents(r.data)).catch(() => {});
+    loadSms();
+    fetchAll<EventItem>("events").then(setEvents).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Watch progress while anything is going out.
@@ -107,8 +135,12 @@ export default function Campaigns() {
 
   const testSend = async (c: Campaign) => {
     try {
-      const r = await api.post<{ message: string }>(`campaigns/${c.uuid}/test`);
-      toast({ title: "Test sent", description: r.message });
+      const r = await api.post<{ message: string; results?: { number: string; ok: boolean; error: string | null }[] }>(`campaigns/${c.uuid}/test`);
+      const failed = r.results?.filter((x) => !x.ok) ?? [];
+      toast({
+        title: c.channel === "sms" ? "Test SMS sent 📱" : "Test sent",
+        description: failed.length ? `${r.message} Failed: ${failed.map((f) => `+${f.number} (${f.error})`).join(", ")}` : r.message,
+      });
     } catch (e) {
       toast({ title: "Test failed", description: errorMessage(e), variant: "destructive" });
     }
@@ -133,9 +165,12 @@ export default function Campaigns() {
   };
 
   const audienceLabel = (c: Campaign) => {
-    const s = c.audience_filter?.source ?? (c.event_id ? "event" : "all");
-    if (s === "platform") return "Everyone on Tikooh";
-    if (s === "event") return `Guests of ${c.event?.title ?? "an event"}`;
+    const f = c.audience_filter ?? {};
+    if (f.include?.length) return `${f.include.length} hand-picked`;
+    const s = f.source ?? (c.event_id ? "event" : "all");
+    const events = f.event_ids?.length ?? 0;
+    if (s === "platform") return f.tenant_ids?.length ? `${f.tenant_ids.length} organiser${f.tenant_ids.length === 1 ? "" : "s"}` : "Everyone on Tikooh";
+    if (s === "event") return events > 1 ? `Guests of ${events} events` : `Guests of ${c.event?.title ?? "an event"}`;
     return "All past guests";
   };
 
@@ -149,9 +184,16 @@ export default function Campaigns() {
               <h1 className="text-3xl font-bold text-foreground">Campaigns</h1>
               <p className="text-muted-foreground">Tell your past guests about new events, offers and news.</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              {isAdmin && (
+                <Button variant="outline" onClick={() => setSmsOpen(true)}>
+                  <Wallet className="w-4 h-4 mr-2" /> SMS account
+                  {sms?.balance?.ok && <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{kes(sms.balance.amount)}</span>}
+                  {sms?.balance && !sms.balance.ok && <AlertTriangle className="ml-1.5 w-3.5 h-3.5 text-destructive" />}
+                </Button>
+              )}
               <Button variant="outline" onClick={() => setContactsOpen(true)}>
-                <Users className="w-4 h-4 mr-2" /> Contacts{contactTotal ? ` (${contactTotal.toLocaleString()})` : ""}
+                <Users className="w-4 h-4 mr-2" /> Contacts
               </Button>
               <Button onClick={() => open(null)}><Plus className="w-4 h-4 mr-2" /> New campaign</Button>
             </div>
@@ -194,7 +236,7 @@ export default function Campaigns() {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {editable && <Button size="sm" variant="ghost" onClick={() => open(c)}><Pencil className="w-3.5 h-3.5 mr-1" /> Edit</Button>}
-                        {editable && c.channel === "email" && <Button size="sm" variant="ghost" onClick={() => testSend(c)}><FlaskConical className="w-3.5 h-3.5 mr-1" /> Test</Button>}
+                        {editable && <Button size="sm" variant="ghost" onClick={() => testSend(c)}><FlaskConical className="w-3.5 h-3.5 mr-1" /> {c.channel === "sms" ? "Test SMS" : "Test"}</Button>}
                         {c.status === "draft" && <Button size="sm" variant="outline" onClick={() => setScheduling(c)}><Clock className="w-3.5 h-3.5 mr-1" /> Schedule</Button>}
                         {c.status === "scheduled" && <Button size="sm" variant="outline" onClick={() => unschedule(c)}>Unschedule</Button>}
                         {editable && <Button size="sm" onClick={() => setConfirm(c)}><Send className="w-3.5 h-3.5 mr-1" /> Send now</Button>}
@@ -211,6 +253,15 @@ export default function Campaigns() {
                           <span>{c.sent_count.toLocaleString()} sent{c.failed_count > 0 && <span className="text-destructive"> · {c.failed_count} failed</span>}</span>
                           <span>{c.completed_at ? `Finished ${fmt(c.completed_at)}` : c.status === "queued" ? "Starting…" : `${progress}%`}</span>
                         </div>
+                        {c.monitors && c.monitors.length > 0 && (
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs">
+                            {c.monitors.map((m) => (
+                              <span key={m.destination} className={`inline-flex items-center gap-1 ${m.status === "delivered" ? "text-success" : m.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
+                                <Smartphone className="w-3.5 h-3.5" /> Your copy to +{m.destination}: {STATUS_COPY[m.status] ?? m.status}{m.error ? ` (${m.error})` : ""}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -218,6 +269,7 @@ export default function Campaigns() {
               })}
             </div>
           )}
+          <Pager page={paging} onChange={setPage} noun="campaigns" />
         </div>
       </main>
 
@@ -227,6 +279,7 @@ export default function Campaigns() {
           events={events}
           isAdmin={isAdmin}
           contactTotal={contactTotal ?? 0}
+          sms={sms}
           onClose={() => setComposerOpen(false)}
           onSaved={(c, then) => {
             setComposerOpen(false);
@@ -237,7 +290,8 @@ export default function Campaigns() {
         />
       )}
 
-      <ConfirmSend campaign={confirm} onClose={() => setConfirm(null)} onSent={() => { setConfirm(null); load(); }} />
+      <ConfirmSend campaign={confirm} sms={sms} isAdmin={isAdmin} onClose={() => setConfirm(null)} onSent={() => { setConfirm(null); load(); loadSms(); }} />
+      {isAdmin && <SmsAccountDialog open={smsOpen} onClose={() => setSmsOpen(false)} onStatus={setSms} />}
       <ScheduleDialog campaign={scheduling} onClose={() => setScheduling(null)} onDone={() => { setScheduling(null); load(); }} />
       <ContactsDialog open={contactsOpen} onClose={() => setContactsOpen(false)} onChanged={loadContacts} />
     </div>
@@ -246,21 +300,20 @@ export default function Campaigns() {
 
 /* ── Composer ─────────────────────────────────────────────────────────── */
 
-function Composer({ campaign, events, isAdmin, contactTotal, onClose, onSaved }: {
+function Composer({ campaign, events, isAdmin, contactTotal, sms, onClose, onSaved }: {
   campaign: Campaign | null;
   events: EventItem[];
   isAdmin: boolean;
   contactTotal: number;
+  sms: SmsStatus | null;
   onClose: () => void;
   onSaved: (c: Campaign, then?: "send" | "test") => void;
 }) {
   const [form, setForm] = useState<Form>(() => campaign ? {
     name: campaign.name,
     channel: campaign.channel,
-    source: campaign.audience_filter?.source ?? (campaign.event_id ? "event" : "all"),
-    event_id: campaign.event_id ? String(campaign.event_id) : "",
-    checked_in: !!campaign.audience_filter?.checked_in,
-    include_contacts: campaign.audience_filter?.include_contacts ?? true,
+    filter: filterFrom(campaign),
+    monitors: campaign.monitor_numbers ?? [],
     featured_event_id: campaign.featured_event_id ? String(campaign.featured_event_id) : "",
     subject: campaign.subject ?? "",
     body: campaign.body,
@@ -268,40 +321,34 @@ function Composer({ campaign, events, isAdmin, contactTotal, onClose, onSaved }:
     image_url: "",
     cta_label: campaign.cta_label ?? "",
     cta_url: campaign.cta_url ?? "",
-  } : blank);
-  const [audience, setAudience] = useState<Audience | null>(null);
-  const [counting, setCounting] = useState(false);
+  } : { ...blank, monitors: sms?.monitor_numbers ?? [] });
+  const [audience, setAudience] = useState<AudienceSummary | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
 
+  const monitors = form.monitors.map((m) => m.trim()).filter(Boolean).slice(0, 3);
+
   const payload = () => ({
     name: form.name.trim() || form.subject.trim() || "Untitled campaign",
     channel: form.channel,
-    event_id: form.source === "event" && form.event_id ? Number(form.event_id) : null,
+    // Kept for the list label; the filter's event_ids is what decides the audience.
+    event_id: form.filter.source === "event" && form.filter.event_ids?.length === 1 ? form.filter.event_ids[0] : null,
     featured_event_id: form.featured_event_id ? Number(form.featured_event_id) : null,
     subject: form.channel === "email" ? form.subject || null : null,
     body: form.body,
     image_path: form.channel === "email" ? form.image_path || null : null,
     cta_label: form.channel === "email" && form.cta_url ? form.cta_label || "Learn more" : null,
     cta_url: form.channel === "email" ? form.cta_url || null : null,
-    audience_filter: { source: form.source, checked_in: form.checked_in, include_contacts: form.include_contacts },
+    audience_filter: form.filter,
+    monitor_numbers: form.channel === "sms" ? monitors : null,
   });
 
-  // Live recipient count as the audience changes.
-  const audienceKey = `${form.channel}|${form.source}|${form.event_id}|${form.checked_in}|${form.include_contacts}|${form.channel === "sms" ? form.body.length : ""}`;
-  useEffect(() => {
-    if (form.source === "event" && !form.event_id) { setAudience(null); return; }
-    setCounting(true);
-    const t = window.setTimeout(() => {
-      const p = payload();
-      api.post<Audience>("campaigns/audience", { channel: p.channel, event_id: p.event_id, audience_filter: p.audience_filter, body: p.body || " " })
-        .then(setAudience).catch(() => setAudience(null)).finally(() => setCounting(false));
-    }, 350);
-    return () => window.clearTimeout(t);
-  }, [audienceKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Credits depend on the body only for SMS (personalised per person server-side).
+  const countedBody = form.channel === "sms" ? form.body : "";
+  const smsInfo = analyseSms(form.body);
 
   const insertTag = (tag: string) => {
     const el = bodyRef.current;
@@ -344,13 +391,6 @@ function Composer({ campaign, events, isAdmin, contactTotal, onClose, onSaved }:
   const featured = events.find((e) => String(e.id) === form.featured_event_id);
   const upcoming = events.filter((e) => +new Date(e.end_date || e.start_date) > Date.now());
   const imageUrl = form.image_url || (form.image_path?.startsWith("http") ? form.image_path : "");
-  const smsLen = form.body.length;
-
-  const sources: { id: Source; title: string; hint: string; icon: typeof Users }[] = [
-    { id: "all", title: "All my past guests", hint: `Everyone who booked any of your events${contactTotal ? ` + ${contactTotal.toLocaleString()} imported contacts` : ""}`, icon: Users },
-    { id: "event", title: "Guests of one event", hint: "Updates, thank-yous, photos", icon: CalendarDays },
-    ...(isAdmin ? [{ id: "platform" as Source, title: "Everyone on Tikooh", hint: "Every attendee across all organisers", icon: Globe2 }] : []),
-  ];
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -373,45 +413,16 @@ function Composer({ campaign, events, isAdmin, contactTotal, onClose, onSaved }:
             </div>
 
             {/* Audience */}
-            <div className="space-y-2">
-              <Label>Send to</Label>
-              <div className={`grid gap-2 ${sources.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-                {sources.map((s) => (
-                  <button key={s.id} type="button" onClick={() => set("source", s.id)}
-                    className={`text-left rounded-xl border p-3 transition ${form.source === s.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}>
-                    <s.icon className={`w-4 h-4 mb-1.5 ${form.source === s.id ? "text-primary" : "text-muted-foreground"}`} />
-                    <div className="text-sm font-medium text-foreground">{s.title}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{s.hint}</div>
-                  </button>
-                ))}
-              </div>
-              {form.source === "event" && (
-                <select value={form.event_id} onChange={(e) => set("event_id", e.target.value)} aria-label="Event"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="">Choose the event…</option>
-                  {events.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
-                </select>
-              )}
-              <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1">
-                <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Switch checked={form.checked_in} onCheckedChange={(v) => set("checked_in", v)} /> Only people who showed up
-                </label>
-                {form.source !== "event" && !form.checked_in && (
-                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Switch checked={form.include_contacts} onCheckedChange={(v) => set("include_contacts", v)} /> Include imported contacts
-                  </label>
-                )}
-              </div>
-              <div className="flex items-center gap-2 rounded-xl bg-primary/5 border border-primary/20 px-3 py-2.5 text-sm">
-                {counting ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <CheckCircle2 className="w-4 h-4 text-primary" />}
-                <span className="text-foreground font-semibold tabular-nums">{audience ? audience.recipient_count.toLocaleString() : "—"}</span>
-                <span className="text-muted-foreground">
-                  {audience?.recipient_count === 1 ? "person" : "people"} will get this
-                  {form.channel === "sms" && audience && audience.estimated_cost > 0 && ` · ~${kes(audience.estimated_cost)} (${audience.segments_per_message} SMS each)`}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground">Duplicates are removed and people who unsubscribed are skipped automatically.</p>
-            </div>
+            <AudienceBuilder
+              channel={form.channel}
+              body={countedBody}
+              filter={form.filter}
+              onChange={(f) => set("filter", f)}
+              isAdmin={isAdmin}
+              contactTotal={contactTotal}
+              sms={sms}
+              onSummary={setAudience}
+            />
 
             {/* Content */}
             {form.channel === "email" && (
@@ -438,9 +449,54 @@ function Composer({ campaign, events, isAdmin, contactTotal, onClose, onSaved }:
                   : "Hi {{first_name}},\n\nThanks for partying with us last time. We're back — bigger lineup, new venue…"}
                 value={form.body} onChange={(e) => set("body", e.target.value)} />
               {form.channel === "sms" && (
-                <p className="text-xs text-muted-foreground tabular-nums">{smsLen} characters · {Math.max(1, Math.ceil(smsLen / (smsLen > 160 ? 153 : 160)))} SMS per person</p>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {smsInfo.characters} / {smsInfo.segments === 1 ? smsInfo.perSegment : smsInfo.segments * smsInfo.perSegment} characters
+                    · <span className={smsInfo.segments > 1 ? "text-foreground font-medium" : ""}>{smsInfo.segments} SMS part{smsInfo.segments === 1 ? "" : "s"}</span> per person
+                    · {smsInfo.remaining} left before the next part
+                    {/\{\{/.test(form.body) && " · names change the length, so credits are counted per person"}
+                  </p>
+                  {smsInfo.encoding === "UCS-2" && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-xs text-orange-600 dark:text-orange-400">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        <span className="font-medium">Unicode message:</span> only {smsInfo.segments > 1 ? 67 : 70} characters per part (instead of 160) because of
+                        {" "}{smsInfo.unicodeChars.map((c) => <code key={c} className="mx-0.5 rounded bg-background/60 px-1">{c === " " ? "nbsp" : c}</code>)}
+                      </span>
+                      {smsInfo.fixable && (
+                        <Button type="button" size="sm" variant="outline" className="h-7 ml-auto" onClick={() => set("body", toGsm(form.body))}>
+                          <Wand2 className="w-3.5 h-3.5 mr-1" /> Fix: use plain quotes &amp; dashes
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
+
+            {form.channel === "sms" && (
+              <div className="space-y-1.5 rounded-xl border border-border p-3">
+                <Label className="flex items-center gap-1.5"><Smartphone className="w-4 h-4 text-primary" /> Send a copy to my number{monitors.length === 1 ? "" : "s"}</Label>
+                <p className="text-xs text-muted-foreground">
+                  Up to 3 numbers get this SMS first, before anyone else, so you see exactly what landed. "Test SMS" texts only these. Remembered for next time.
+                </p>
+                <div className="grid sm:grid-cols-3 gap-2">
+                  {[0, 1, 2].map((i) => (i === 0 || form.monitors[i - 1]?.trim() || form.monitors[i]) ? (
+                    <div key={i} className="relative">
+                      <Input inputMode="tel" placeholder={i === 0 ? "07XX XXX XXX" : "Another number"} value={form.monitors[i] ?? ""}
+                        onChange={(e) => { const next = [...form.monitors]; next[i] = e.target.value; set("monitors", next); }} />
+                      {form.monitors[i] && (
+                        <button type="button" aria-label="Remove number" className="absolute right-2 top-2.5 text-muted-foreground hover:text-destructive"
+                          onClick={() => set("monitors", form.monitors.filter((_, j) => j !== i))}><X className="w-4 h-4" /></button>
+                      )}
+                    </div>
+                  ) : null)}
+                </div>
+                {audience && audience.monitor_count > 0 && (
+                  <p className="text-xs text-muted-foreground">+{audience.monitor_count} cop{audience.monitor_count === 1 ? "y" : "ies"} to you, included in the credits above.</p>
+                )}
+              </div>
+            )}
 
             {form.channel === "email" && (
               <>
@@ -487,7 +543,10 @@ function Composer({ campaign, events, isAdmin, contactTotal, onClose, onSaved }:
               <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" disabled={saving} onClick={() => save()}>Save draft</Button>
-                {form.channel === "email" && <Button type="button" variant="outline" disabled={saving} onClick={() => save("test")}><FlaskConical className="w-4 h-4 mr-1.5" /> Save &amp; test</Button>}
+                <Button type="button" variant="outline" disabled={saving || (form.channel === "sms" && monitors.length === 0)} onClick={() => save("test")}
+                  title={form.channel === "sms" && monitors.length === 0 ? "Add your number under “Send a copy to” first" : undefined}>
+                  <FlaskConical className="w-4 h-4 mr-1.5" /> {form.channel === "sms" ? "Save & text me" : "Save & test"}
+                </Button>
                 <Button type="button" disabled={saving || !audience?.recipient_count} onClick={() => save("send")}>
                   {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Send className="w-4 h-4 mr-1.5" />} Review &amp; send
                 </Button>
@@ -553,14 +612,20 @@ function EmailPreview({ form, imageUrl, featured }: { form: Form; imageUrl: stri
 
 /* ── Send confirmation ────────────────────────────────────────────────── */
 
-function ConfirmSend({ campaign, onClose, onSent }: { campaign: Campaign | null; onClose: () => void; onSent: () => void }) {
+function ConfirmSend({ campaign, sms, isAdmin, onClose, onSent }: { campaign: Campaign | null; sms: SmsStatus | null; isAdmin: boolean; onClose: () => void; onSent: () => void }) {
   const [sending, setSending] = useState(false);
-  const [count, setCount] = useState<number | null>(null);
+  const [preview, setPreview] = useState<AudienceSummary | null>(null);
+  const count = preview?.recipient_count ?? null;
 
   useEffect(() => {
-    setCount(null);
-    if (campaign) api.get<Audience>(`campaigns/${campaign.uuid}/preview`).then((a) => setCount(a.recipient_count)).catch(() => setCount(campaign.recipient_count));
+    setPreview(null);
+    if (campaign) api.get<AudienceSummary>(`campaigns/${campaign.uuid}/preview`).then(setPreview)
+      .catch(() => setPreview({ recipient_count: campaign.recipient_count, estimated_cost: Number(campaign.estimated_cost) } as AudienceSummary));
   }, [campaign]);
+
+  const isSms = campaign?.channel === "sms";
+  const balance = sms?.balance;
+  const short = isSms && balance?.ok && balance.amount != null && (preview?.estimated_cost ?? 0) > balance.amount;
 
   const send = async () => {
     if (!campaign) return;
@@ -583,12 +648,32 @@ function ConfirmSend({ campaign, onClose, onSent }: { campaign: Campaign | null;
           <DialogTitle>Send “{campaign?.name}”?</DialogTitle>
           <DialogDescription>
             {count === null ? "Counting recipients…" : `This goes to ${count.toLocaleString()} ${count === 1 ? "person" : "people"} right now. It can't be undone.`}
-            {campaign?.channel === "sms" && Number(campaign.estimated_cost) > 0 && ` Estimated cost ${kes(campaign.estimated_cost)}.`}
           </DialogDescription>
         </DialogHeader>
+        {isSms && preview?.credits != null && (
+          <div className="rounded-xl border border-border divide-y divide-border text-sm">
+            <div className="flex justify-between px-3 py-2"><span className="text-muted-foreground">SMS credits</span><span className="font-semibold tabular-nums">{preview.credits.toLocaleString()}</span></div>
+            <div className="flex justify-between px-3 py-2"><span className="text-muted-foreground">Estimated cost</span><span className="font-semibold tabular-nums">{kes(preview.estimated_cost)}</span></div>
+            {preview.skipped > 0 && (
+              <div className="flex justify-between px-3 py-2"><span className="text-muted-foreground">Bad numbers skipped (free)</span><span className="tabular-nums">{preview.skipped.toLocaleString()}</span></div>
+            )}
+            {isAdmin && balance?.ok && (
+              <div className={`flex justify-between px-3 py-2 ${short ? "text-destructive" : ""}`}>
+                <span className={short ? "" : "text-muted-foreground"}>{sms?.provider_label} balance</span>
+                <span className="tabular-nums font-medium">{kes(balance.amount)}{short ? " · not enough" : ""}</span>
+              </div>
+            )}
+            <div className="flex items-start gap-2 px-3 py-2 text-xs">
+              <Smartphone className="w-4 h-4 text-primary shrink-0" />
+              {preview.monitor_count > 0
+                ? <span>Your cop{preview.monitor_count === 1 ? "y goes" : "ies go"} first to {preview.monitor_numbers.map((n) => `+${n}`).join(", ")}. Watch your phone.</span>
+                : <span className="text-orange-500">No confirmation number. You won't get a copy. Edit the campaign to add yours.</span>}
+            </div>
+          </div>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Not yet</Button>
-          <Button disabled={sending || !count} onClick={send}>
+          <Button disabled={sending || !count || short} onClick={send}>
             {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />} Send to {count?.toLocaleString() ?? "…"}
           </Button>
         </DialogFooter>
@@ -640,24 +725,60 @@ function ScheduleDialog({ campaign, onClose, onDone }: { campaign: Campaign | nu
 
 /* ── Contacts ─────────────────────────────────────────────────────────── */
 
-function ContactsDialog({ open, onClose, onChanged }: { open: boolean; onClose: () => void; onChanged: () => void }) {
-  const [list, setList] = useState<{ data: Contact[]; total: number } | null>(null);
-  const [q, setQ] = useState("");
-  const [importing, setImporting] = useState(false);
+/** Excel, ODS and friends become a CSV in the browser; the server only parses text. */
+const SPREADSHEET = /\.(xlsx|xlsm|xlsb|xls|ods|numbers)$/i;
 
-  const load = () => api.get<{ data: Contact[]; total: number }>(`contacts?per_page=25&q=${encodeURIComponent(q)}`).then(setList).catch(() => {});
+async function asCsv(file: File): Promise<File> {
+  if (!SPREADSHEET.test(file.name)) return file;
+  const XLSX = await import("xlsx");
+  const book = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  // First sheet that actually has rows in it.
+  const sheet = book.SheetNames.map((n) => book.Sheets[n]).find((s) => s && s["!ref"]);
+  if (!sheet) throw new Error("That spreadsheet is empty.");
+  const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false, rawNumbers: false });
+  return new File([csv], file.name.replace(SPREADSHEET, ".csv"), { type: "text/csv" });
+}
+
+function ContactsDialog({ open, onClose, onChanged }: { open: boolean; onClose: () => void; onChanged: () => void }) {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
+  const [list, setList] = useState<{ data: Contact[]; total: number; imported_total: number; attendee_total: number; current_page: number; last_page: number } | null>(null);
+  const [q, setQ] = useState("");
+  const [type, setType] = useState<"all" | "attendees" | "imported">("all");
+  const [page, setPage] = useState(1);
+  const [importing, setImporting] = useState(false);
+  const [organisers, setOrganisers] = useState<{ id: number; organization_name: string }[]>([]);
+  const [tenantId, setTenantId] = useState("");
+
+  const owner = isSuperAdmin && tenantId ? `&tenant_id=${tenantId}` : "";
+  const load = () => api.get<NonNullable<typeof list>>(`contacts?per_page=50&page=${page}&type=${type}&q=${encodeURIComponent(q)}${owner}`).then(setList).catch(() => {});
+  useEffect(() => { setPage(1); }, [q, type, tenantId]);
+
+  useEffect(() => {
+    if (!open || !isSuperAdmin || organisers.length) return;
+    fetchAll<{ id: number; organization_name: string }>("admin/organisers")
+      .then((all) => setOrganisers([...all].sort((a, b) => a.organization_name.localeCompare(b.organization_name))))
+      .catch(() => {});
+  }, [open, isSuperAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) return;
     const t = window.setTimeout(load, 250);
     return () => window.clearTimeout(t);
-  }, [open, q]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, q, tenantId, type, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const importFile = async (file: File) => {
+  const importFile = async (picked: File) => {
+    if (isSuperAdmin && !tenantId) {
+      toast({ title: "Choose an organiser first", description: "Pick who these contacts belong to.", variant: "destructive" });
+      return;
+    }
     setImporting(true);
     try {
+      const file = await asCsv(picked);
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("source", picked.name);
+      if (isSuperAdmin) fd.append("tenant_id", tenantId);
       const r = await api.post<{ added: number; updated: number; skipped: number; total: number }>("contacts/import", fd);
       toast({
         title: `Imported ${r.added.toLocaleString()} new contact${r.added === 1 ? "" : "s"}`,
@@ -684,39 +805,76 @@ function ContactsDialog({ open, onClose, onChanged }: { open: boolean; onClose: 
         <DialogHeader>
           <DialogTitle>Contacts</DialogTitle>
           <DialogDescription>
-            Past guests from before Tikooh. Everyone who books on Tikooh is included in campaigns automatically. You don't need to import them.
+            Everyone you can reach: guests who registered for your events, plus past guests you imported from before Tikooh. New registrations appear here automatically.
           </DialogDescription>
         </DialogHeader>
 
+        {isSuperAdmin && (
+          <div className="space-y-1.5">
+            <Label htmlFor="contacts-owner">Contacts belong to</Label>
+            <select id="contacts-owner" value={tenantId} onChange={(e) => setTenantId(e.target.value)}
+              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">Choose an organiser…</option>
+              {organisers.map((o) => <option key={o.id} value={o.id}>{o.organization_name}</option>)}
+            </select>
+          </div>
+        )}
+
         <label className={`flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-6 text-center cursor-pointer transition ${importing ? "border-primary bg-primary/5" : "border-border hover:border-primary/60"}`}>
           {importing ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : <Upload className="w-6 h-6 text-primary" />}
-          <span className="text-sm font-medium text-foreground">{importing ? "Importing…" : "Upload a CSV"}</span>
-          <span className="text-xs text-muted-foreground">Columns like <span className="font-mono">name, email, phone</span>. From Excel or Google Sheets use File → Save as / Download → CSV.</span>
-          <input type="file" accept=".csv,text/csv" className="hidden" disabled={importing}
+          <span className="text-sm font-medium text-foreground">{importing ? "Importing…" : "Upload a spreadsheet"}</span>
+          <span className="text-xs text-muted-foreground">Excel, Google Sheets export, CSV or TSV. Any columns with names and phone numbers or emails. Headers optional.</span>
+          <input type="file" accept=".csv,.tsv,.txt,.xlsx,.xlsm,.xlsb,.xls,.ods,.numbers,text/csv,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.oasis.opendocument.spreadsheet" className="hidden" disabled={importing}
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) importFile(f); }} />
         </label>
         <p className="text-xs text-muted-foreground">Only import people who gave you their details for your events. Every email includes an unsubscribe link.</p>
 
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
-          <Input className="pl-9" placeholder={`Search ${list?.total.toLocaleString() ?? ""} contacts`} value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="flex flex-wrap items-center gap-2">
+          {([
+            ["all", "Everyone", list ? list.attendee_total + list.imported_total : null],
+            ["attendees", "Registered", list?.attendee_total],
+            ["imported", "Imported", list?.imported_total],
+          ] as const).map(([id, label, n]) => (
+            <button key={id} type="button" onClick={() => setType(id)}
+              className={`text-xs rounded-full px-2.5 py-1 border transition ${type === id ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>
+              {label}{n != null ? ` ${n.toLocaleString()}` : ""}
+            </button>
+          ))}
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
+            <Input className="pl-9" placeholder="Search name, email or phone" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
         </div>
 
-        <div className="max-h-72 overflow-y-auto divide-y divide-border rounded-xl border border-border">
+        <div className="max-h-80 overflow-y-auto divide-y divide-border rounded-xl border border-border">
           {!list ? (
             <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
           ) : list.data.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">{q ? "No matches." : "No contacts imported yet."}</p>
+            <p className="text-sm text-muted-foreground text-center py-8">{q ? "No matches." : type === "imported" ? "No contacts imported yet." : "Nobody has registered yet."}</p>
           ) : list.data.map((c) => (
-            <div key={c.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+            <div key={`${c.kind}-${c.id}`} className="flex items-center gap-3 px-3 py-2 text-sm">
               <div className="min-w-0 flex-1">
-                <div className="text-foreground truncate">{[c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || c.phone}</div>
-                <div className="text-xs text-muted-foreground truncate">{[c.email, c.phone].filter(Boolean).join(" · ")}{c.source && ` · from ${c.source}`}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-foreground truncate">{[c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || c.phone}</span>
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] ${c.kind === "attendee" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                    {c.kind === "attendee" ? (c.events_count > 1 ? `${c.events_count} events` : "Registered") : "Imported"}
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground truncate">{[c.email, c.phone].filter(Boolean).join(" · ") || "No email or phone"}{c.source && ` · from ${c.source}`}</div>
               </div>
-              <button aria-label="Remove contact" className="text-muted-foreground hover:text-destructive" onClick={() => remove(c)}><Trash2 className="w-4 h-4" /></button>
+              {c.kind === "contact" && (
+                <button aria-label="Remove contact" className="text-muted-foreground hover:text-destructive" onClick={() => remove(c)}><Trash2 className="w-4 h-4" /></button>
+              )}
             </div>
           ))}
         </div>
+        {list && list.last_page > 1 && (
+          <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+            <Button type="button" size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+            <span className="tabular-nums">{list.current_page} / {list.last_page}</span>
+            <Button type="button" size="sm" variant="ghost" disabled={page >= list.last_page} onClick={() => setPage((p) => p + 1)}>Next</Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

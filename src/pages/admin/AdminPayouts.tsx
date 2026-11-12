@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { api, errorMessage, kes } from "@/lib/api";
+import { Page } from "@/lib/paging";
+import Pager from "@/components/Pager";
 
 interface Row {
   id: number;
@@ -30,6 +32,7 @@ interface Data {
   b2c_lock: { locked_at: string; result_code: string; result_desc: string } | null;
   queue: Row[];
   recent: Row[];
+  recent_total: number;
   totals: { requested: number; processing: number };
 }
 
@@ -74,6 +77,18 @@ export default function AdminPayouts() {
     const t = window.setInterval(load, 30000);
     return () => window.clearInterval(t);
   }, []);
+
+  // Settled payouts: page 1 rides along with the live queue; older pages on demand.
+  const [recentN, setRecentN] = useState(1);
+  const [older, setOlder] = useState<Page<Row> | null>(null);
+  useEffect(() => {
+    if (recentN === 1) { setOlder(null); return; }
+    api.get<Page<Row>>(`admin/payouts/recent?per_page=25&page=${recentN}`).then(setOlder).catch(() => {});
+  }, [recentN]);
+  const recent: Page<Row> | null = older ?? (data ? {
+    data: data.recent, current_page: 1, per_page: 25, total: data.recent_total ?? data.recent.length,
+    last_page: Math.max(1, Math.ceil((data.recent_total ?? data.recent.length) / 25)), from: data.recent.length ? 1 : null, to: data.recent.length || null,
+  } : null);
 
   if (user?.role !== "super_admin") return <Navigate to="/dashboard" replace />;
 
@@ -196,17 +211,18 @@ export default function AdminPayouts() {
                 )}
               </section>
 
-              {data.recent.length > 0 && (
+              {recent && recent.data.length > 0 && (
                 <section className="glass rounded-2xl">
-                  <h2 className="px-5 pt-4 font-semibold text-foreground">Recent</h2>
+                  <h2 className="px-5 pt-4 font-semibold text-foreground">History</h2>
                   <ul className="divide-y divide-border text-sm">
-                    {data.recent.map((r) => (
+                    {recent.data.map((r) => (
                       <li key={r.id} className="px-5 py-2.5 flex flex-wrap items-center justify-between gap-2 hover:bg-muted/40 cursor-pointer" onClick={() => openHistory(r)}>
                         <span className="text-foreground flex items-center gap-2"><History className="w-3.5 h-3.5 text-muted-foreground" />#{r.id} {r.tenant?.organization_name} · {kes(r.net_amount)}</span>
                         <span className="text-muted-foreground">{r.status}{r.mpesa_receipt ? ` · ${r.mpesa_receipt}` : ""}{r.payment_method ? ` · ${r.payment_method}` : ""}{r.paid_at ? ` · ${new Date(r.paid_at).toLocaleString("en-KE")}` : ""}</span>
                       </li>
                     ))}
                   </ul>
+                  <Pager page={recent} onChange={setRecentN} noun="payouts" className="px-5 py-3 border-t border-border" />
                 </section>
               )}
             </>

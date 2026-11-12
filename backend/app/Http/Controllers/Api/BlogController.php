@@ -53,10 +53,16 @@ class BlogController extends Controller
 
     // ── Platform admin ──────────────────────────────────────────────────────
 
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        return response()->json(BlogPost::query()->with('author:id,name')->latest('id')->get()
-            ->map(fn (BlogPost $p) => $this->present($p, full: true)));
+        $page = BlogPost::query()->with('author:id,name')
+            ->when(trim($request->string('search')->toString()), fn ($q, $s) => $q->where('title', 'like', "%{$s}%"))
+            ->latest('id')
+            ->paginate($request->integer('per_page', 20));
+
+        $page->getCollection()->transform(fn (BlogPost $p) => $this->present($p, full: true));
+
+        return response()->json($page);
     }
 
     public function store(Request $request): JsonResponse

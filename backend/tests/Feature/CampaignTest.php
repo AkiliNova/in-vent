@@ -170,4 +170,61 @@ class CampaignTest extends TestCase
         $this->assertSame('past-guests.csv', $jane->source);
         $this->assertNotNull($jane->phone);
     }
+
+    public function test_contacts_import_with_unknown_headers_and_numbered_names(): void
+    {
+        $csv = "NAMES,CONTACT\n1. Annet Nkatha,0758248710\n2.Femina Mwangi,0748335710\nsir ken,727288201\n";
+        $file = UploadedFile::fake()->createWithContent('Sheet1.csv', $csv);
+
+        $this->post('/api/contacts/import', ['file' => $file], ['Accept' => 'application/json'])
+            ->assertOk()
+            ->assertJson(['added' => 3, 'skipped' => 0]);
+
+        $annet = Contact::withoutGlobalScope('tenant')->where('phone', '254758248710')->first();
+        $this->assertSame('Annet', $annet->first_name);
+        $this->assertSame('Nkatha', $annet->last_name);
+        $this->assertSame('Femina', Contact::withoutGlobalScope('tenant')->where('phone', '254748335710')->value('first_name'));
+        $this->assertTrue(Contact::withoutGlobalScope('tenant')->where('phone', '254727288201')->exists(), 'Excel drops the leading 0');
+    }
+
+    public function test_contact_list_includes_registered_attendees_once_each(): void
+    {
+        $r = $this->getJson('/api/contacts?per_page=50')->assertOk();
+
+        // Attendees: ada (2 events → 1 row), grace, gone, walk-in, phone-only import; + 2 imported contacts.
+        $r->assertJsonPath('total', 7)->assertJsonPath('imported_total', 2)->assertJsonPath('attendee_total', 5);
+
+        $rows = collect($r->json('data'));
+        $ada = $rows->firstWhere('email', 'ada@example.com');
+        $this->assertSame('attendee', $ada['kind']);
+        $this->assertSame(2, $ada['events_count']);
+        $this->assertSame(2, $rows->whereNull('email')->count(), 'placeholder emails are hidden');
+        $this->assertFalse($rows->contains('email', 'theirs@list.com'), 'other organisers stay out');
+
+        $this->getJson('/api/contacts?type=imported')->assertJsonPath('total', 2);
+        $this->getJson('/api/contacts?type=attendees&q=grace')->assertJsonPath('total', 1);
+    }
+
+    public function test_super_admin_chooses_whose_contacts_they_are(): void
+    {
+        $admin = TenantContext::withoutScoping(fn () => User::create(['name' => 'Root', 'email' => 'root@tikooh.com', 'password' => 'password123', 'role' => 'super_admin']));
+        Sanctum::actingAs($admin);
+        $file = fn () => UploadedFile::fake()->createWithContent('list.tsv', "Name\tPhone\nZed Z\t0712345670\n");
+
+        $this->post('/api/contacts/import', ['file' => $file()], ['Accept' => 'application/json'])
+            ->assertStatus(422)->assertJson(['message' => 'Choose which organiser these contacts belong to.']);
+
+        $this->post('/api/contacts/import', ['file' => $file(), 'tenant_id' => $this->other->id], ['Accept' => 'application/json'])
+            ->assertOk()->assertJson(['added' => 1]);
+        $this->assertSame($this->other->id, Contact::withoutGlobalScope('tenant')->where('phone', '254712345670')->value('tenant_id'));
+
+        // 2 imported (theirs@list + Zed) + their 1 attendee (Linus)
+        $this->getJson("/api/contacts?tenant_id={$this->other->id}")->assertOk()
+            ->assertJsonPath('imported_total', 2)->assertJsonPath('total', 3);
+
+        // An organiser can't redirect contacts into someone else's account.
+        Sanctum::actingAs($this->organiser);
+        $this->post('/api/contacts/import', ['file' => $file(), 'tenant_id' => $this->other->id], ['Accept' => 'application/json'])->assertOk();
+        $this->assertSame($this->acme->id, Contact::withoutGlobalScope('tenant')->where('phone', '254712345670')->where('tenant_id', $this->acme->id)->value('tenant_id'));
+    }
 }

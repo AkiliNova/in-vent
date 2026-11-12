@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { api, errorMessage } from "@/lib/api";
+import { Page } from "@/lib/paging";
+import Pager from "@/components/Pager";
 
 interface Post {
   id: number;
@@ -31,17 +33,19 @@ const empty = { title: "", excerpt: "", body: "", category: "Tips & Guides", cov
 
 export default function BlogManager() {
   const { user } = useAuth();
-  const [posts, setPosts] = useState<Post[] | null>(null);
+  const [list, setList] = useState<Page<Post> | null>(null);
+  const [page, setPage] = useState(1);
+  const posts = list?.data ?? null;
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Post | null>(null);
   const [form, setForm] = useState(empty);
   const [cover, setCover] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const load = () => api.get<Post[]>("admin/blog").then(setPosts).catch((e) =>
+  const load = () => api.get<Page<Post>>(`admin/blog?per_page=20&page=${page}`).then(setList).catch((e) =>
     toast({ title: "Couldn't load posts", description: errorMessage(e), variant: "destructive" }));
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (user?.role !== "super_admin") return <Navigate to="/dashboard" replace />;
 
@@ -155,6 +159,7 @@ export default function BlogManager() {
               ))}
             </ul>
           )}
+          <Pager page={list} onChange={setPage} noun="posts" className="mt-4" />
         </div>
       </main>
 

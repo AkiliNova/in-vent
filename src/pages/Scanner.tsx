@@ -6,6 +6,7 @@ import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, ApiError, EventItem } from "@/lib/api";
+import { fetchAll } from "@/lib/paging";
 
 interface ScanResult {
   result: "accepted" | "duplicate" | "rejected" | string;
@@ -38,10 +39,10 @@ export default function Scanner() {
   const seen = useRef(new Map<string, number>());
 
   useEffect(() => {
-    api.get<{ data: EventItem[] }>("events?per_page=100").then((r) => {
-      setEvents(r.data);
+    fetchAll<EventItem>("events").then((all) => {
+      setEvents(all);
       if (!eventId) {
-        const next = r.data.filter((e) => e.status === "published")
+        const next = all.filter((e) => e.status === "published")
           .sort((a, b) => +new Date(a.start_date) - +new Date(b.start_date))
           .find((e) => +new Date(e.end_date || e.start_date) > Date.now() - 12 * 3600_000);
         if (next) setEventId(next.uuid);

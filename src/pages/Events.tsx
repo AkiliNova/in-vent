@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { fetchPublicEvents } from "@/lib/api";
+import { paginate } from "@/lib/paging";
+import Pager from "@/components/Pager";
 import Navigation from "@/components/Navigation";
 import EventImg from "@/components/EventImg";
 
@@ -37,7 +39,7 @@ export default function EventsPage() {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const data = await fetchPublicEvents({ per_page: "100" });
+        const data = await fetchPublicEvents({ per_page: "all" });
         setEvents(data.map(e => ({ ...e, location: e.location || "Unknown" })));
       } catch (err) {
         console.error("Error loading events", err);
@@ -78,8 +80,17 @@ export default function EventsPage() {
 
   // Split into upcoming and past
   const today = new Date().toISOString().split("T")[0];
-  const upcomingEvents = filteredEvents.filter(e => e.startDate >= today);
-  const pastEvents = filteredEvents.filter(e => e.startDate < today);
+  const upcomingAll = filteredEvents.filter(e => e.startDate >= today);
+  const pastAll = filteredEvents.filter(e => e.startDate < today);
+
+  // 12 cards a page per section; back to page 1 whenever the filters change.
+  const [upPage, setUpPage] = useState(1);
+  const [pastPage, setPastPage] = useState(1);
+  useEffect(() => { setUpPage(1); setPastPage(1); }, [search, maxPrice, fromDate, location, city, eventType]);
+  const upcoming = paginate(upcomingAll, upPage, 12);
+  const past = paginate(pastAll, pastPage, 12);
+  const upcomingEvents = upcoming.data;
+  const pastEvents = past.data;
 
   if (loading) {
     return <div className="py-32 text-center text-muted-foreground">Loading events…</div>;
@@ -192,6 +203,7 @@ export default function EventsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
                 {renderEventGrid(upcomingEvents)}
               </div>
+              <Pager page={upcoming} onChange={setUpPage} noun="upcoming events" className="mt-4" />
             </div>
 
             <div>
@@ -199,6 +211,7 @@ export default function EventsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
                 {renderEventGrid(pastEvents)}
               </div>
+              <Pager page={past} onChange={setPastPage} noun="past events" className="mt-4" />
             </div>
           </div>
         </div>

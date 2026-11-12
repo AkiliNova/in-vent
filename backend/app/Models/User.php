@@ -25,7 +25,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'tenant_id', 'name', 'email', 'password', 'role',
-        'phone', 'avatar_path', 'firebase_uid', 'is_active',
+        'phone', 'sms_monitor_numbers', 'avatar_path', 'firebase_uid', 'is_active',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -37,6 +37,7 @@ class User extends Authenticatable
             'last_login_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'sms_monitor_numbers' => 'array',
         ];
     }
 

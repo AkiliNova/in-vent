@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { Page } from '@/lib/paging';
+import Pager from '@/components/Pager';
 
 interface ApiPost {
   slug: string; title: string; excerpt?: string; category?: string;
@@ -35,11 +37,15 @@ const categoryColors: Record<string, string> = {
 export default function BlogPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [paging, setPaging] = useState<Omit<Page<unknown>, 'data'> | null>(null);
 
   useEffect(() => {
     const fetch = async () => {
       try {
-        const res = await api.get<{ data: ApiPost[] }>('public/blog?per_page=50');
+        // 13 = one featured card + a 3×4 grid on the first page.
+        const res = await api.get<Page<ApiPost>>(`public/blog?per_page=13&page=${page}`);
+        setPaging(res);
         setPosts(res.data.map(p => ({
           id: p.slug,
           title: p.title,
@@ -59,9 +65,10 @@ export default function BlogPage() {
       }
     };
     fetch();
-  }, []);
+  }, [page]);
 
-  const [featured, ...rest] = posts;
+  // Only page 1 has a featured post; later pages are all grid.
+  const [featured, ...rest] = page === 1 ? posts : [undefined, ...posts];
 
   return (
     <div className="min-h-screen bg-background">
@@ -195,6 +202,9 @@ export default function BlogPage() {
                 </Link>
               ))}
             </div>
+          )}
+          {!loading && (
+            <Pager page={paging} onChange={(n) => { setPage(n); window.scrollTo({ top: 0, behavior: 'smooth' }); }} noun="articles" className="mt-10" />
           )}
         </div>
       </main>

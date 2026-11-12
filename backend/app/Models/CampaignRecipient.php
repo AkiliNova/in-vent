@@ -16,6 +16,7 @@ class CampaignRecipient extends Model
     {
         return [
             'cost' => 'decimal:4',
+            'is_monitor' => 'boolean',
             'sent_at' => 'datetime',
             'delivered_at' => 'datetime',
         ];

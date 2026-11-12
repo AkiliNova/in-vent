@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { api, errorMessage, kes } from "@/lib/api";
+import { Page } from "@/lib/paging";
+import Pager from "@/components/Pager";
 
 interface Organiser {
   id: number; uuid: string; organization_name: string; business_type: string | null; contact_person: string | null;
@@ -39,7 +41,13 @@ interface Detail {
   messages: { id: number; channel: string; type: string; to: string; subject: string | null; status: string; error: string | null; created_at: string }[];
   team: { id: number; name: string; email: string; phone: string | null; role: string; created_at: string; last_login_at: string | null }[];
   activity: { id: number; action: string; description: string | null; created_at: string; user: { name: string } | null }[];
+  counts?: Record<PagedSection, number>;
 }
+
+/** Sections the API pages (admin/organisers/{id}/{section}); the rest are small. */
+const PAGED = ["orders", "payouts", "campaigns", "messages", "activity"] as const;
+type PagedSection = (typeof PAGED)[number];
+const SECTION_PER_PAGE = 25;
 
 const TABS = [
   { id: "events", label: "Events", icon: CalendarDays },
@@ -83,9 +91,25 @@ export default function AdminOrganiserDetail() {
   const [fee, setFee] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const load = () => api.get<Detail>(`admin/organisers/${id}`).then(setD)
+  const [sectionPage, setSectionPage] = useState<Partial<Record<PagedSection, number>>>({});
+
+  const load = () => api.get<Detail>(`admin/organisers/${id}`).then((r) => { setD(r); setSectionPage({}); })
     .catch((e) => toast({ title: "Couldn't load organiser", description: errorMessage(e), variant: "destructive" }));
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Page N of a section replaces that section's rows; page 1 came with the detail.
+  const goSection = (s: PagedSection, n: number) =>
+    api.get<Page<never>>(`admin/organisers/${id}/${s}?per_page=${SECTION_PER_PAGE}&page=${n}`)
+      .then((r) => { setD((prev) => (prev ? { ...prev, [s]: r.data } : prev)); setSectionPage((p) => ({ ...p, [s]: n })); })
+      .catch((e) => toast({ title: "Couldn't load page", description: errorMessage(e), variant: "destructive" }));
+
+  const pagerFor = (s: PagedSection) => {
+    if (!d) return null;
+    const total = d.counts?.[s] ?? d[s].length;
+    const n = sectionPage[s] ?? 1;
+    const from = total ? (n - 1) * SECTION_PER_PAGE + 1 : null;
+    return { current_page: n, last_page: Math.max(1, Math.ceil(total / SECTION_PER_PAGE)), total, from, to: from ? from + d[s].length - 1 : null };
+  };
 
   if (user && user.role !== "super_admin") return <Navigate to="/dashboard" replace />;
 
@@ -189,7 +213,8 @@ export default function AdminOrganiserDetail() {
           {/* ── Tabs ── */}
           <div className="flex gap-1 overflow-x-auto border-b border-border">
             {TABS.map((t) => {
-              const count = { events: d.events.length, orders: d.orders.length, payouts: d.payouts.length, campaigns: d.campaigns.length, messages: d.messages.length, team: d.team.length, activity: d.activity.length }[t.id];
+              const c = d.counts;
+              const count = { events: d.events.length, orders: c?.orders ?? d.orders.length, payouts: c?.payouts ?? d.payouts.length, campaigns: c?.campaigns ?? d.campaigns.length, messages: c?.messages ?? d.messages.length, team: d.team.length, activity: c?.activity ?? d.activity.length }[t.id];
               return (
                 <button key={t.id} onClick={() => setTab(t.id)}
                   className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition ${tab === t.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
@@ -350,6 +375,9 @@ export default function AdminOrganiserDetail() {
                 ))}
               </ol>
             ))}
+            {(PAGED as readonly string[]).includes(tab) && (
+              <Pager page={pagerFor(tab as PagedSection)} onChange={(n) => goSection(tab as PagedSection, n)} noun={tab} className="px-5 py-3 border-t border-border" />
+            )}
           </div>
         </div>
       </main>

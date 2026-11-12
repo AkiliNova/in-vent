@@ -150,6 +150,28 @@ class AdminController extends Controller
      * Everything about one organiser on one screen: profile, how each event
      * performed, money in and out, messaging and who did what.
      */
+    public function organiserSection(Request $request, int $tenant, string $section): JsonResponse
+    {
+        $perPage = $request->integer('per_page', 25);
+
+        return TenantContext::withoutScoping(function () use ($tenant, $section, $perPage) {
+            abort_unless(Tenant::whereKey($tenant)->exists(), 404);
+
+            return response()->json(match ($section) {
+                'orders' => Order::where('tenant_id', $tenant)->with('event:id,title')->latest('id')
+                    ->paginate($perPage, ['id', 'event_id', 'reference', 'buyer_name', 'buyer_email', 'buyer_phone', 'total', 'status', 'provider', 'paid_at', 'created_at']),
+                'payouts' => Payout::where('tenant_id', $tenant)->latest('id')
+                    ->paginate($perPage, ['id', 'net_amount', 'destination_account', 'status', 'payment_method', 'mpesa_receipt', 'result_desc', 'due_at', 'paid_at', 'created_at']),
+                'campaigns' => DB::table('campaigns')->where('tenant_id', $tenant)->latest('id')
+                    ->paginate($perPage, ['uuid', 'name', 'channel', 'status', 'recipient_count', 'sent_count', 'failed_count', 'completed_at', 'created_at']),
+                'messages' => DB::table('message_logs')->where('tenant_id', $tenant)->latest('id')
+                    ->paginate($perPage, ['id', 'channel', 'type', 'to', 'subject', 'status', 'error', 'created_at']),
+                'activity' => ActivityLog::where('tenant_id', $tenant)->with('user:id,name')->latest('id')
+                    ->paginate($perPage, ['id', 'user_id', 'action', 'description', 'subject_type', 'subject_id', 'created_at']),
+            });
+        });
+    }
+
     public function organiser(int $tenant): JsonResponse
     {
         return TenantContext::withoutScoping(function () use ($tenant) {
@@ -196,6 +218,15 @@ class AdminController extends Controller
                     'last_sale_at' => $paid()->max('paid_at'),
                 ],
                 'events' => $events,
+                // Totals for each section's pager; pages beyond the first come
+                // from admin/organisers/{id}/{section}.
+                'counts' => [
+                    'orders' => Order::where('tenant_id', $t->id)->count(),
+                    'payouts' => Payout::where('tenant_id', $t->id)->count(),
+                    'campaigns' => DB::table('campaigns')->where('tenant_id', $t->id)->count(),
+                    'messages' => DB::table('message_logs')->where('tenant_id', $t->id)->count(),
+                    'activity' => ActivityLog::where('tenant_id', $t->id)->count(),
+                ],
                 'orders' => Order::where('tenant_id', $t->id)->with('event:id,title')->latest('id')->limit(25)
                     ->get(['id', 'event_id', 'reference', 'buyer_name', 'buyer_email', 'buyer_phone', 'total', 'status', 'provider', 'paid_at', 'created_at']),
                 'payouts' => Payout::where('tenant_id', $t->id)->latest('id')->limit(25)

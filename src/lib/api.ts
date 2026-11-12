@@ -88,9 +88,16 @@ export const kes = (n: number | string | null | undefined) =>
 
 /** Upcoming published events, flattened for cards on the public pages. */
 export async function fetchPublicEvents(params: Record<string, string> = {}) {
-  const qs = new URLSearchParams({ per_page: "50", ...params }).toString();
-  const res = await api.get<{ data: EventItem[] }>(`public/events?${qs}`);
-  return res.data.map((e) => {
+  // per_page "all" walks every page (the server caps a page at 100).
+  const all = params.per_page === "all";
+  const base = { ...params, per_page: all ? "100" : params.per_page ?? "50" };
+  const get = (page: number) => api.get<{ data: EventItem[]; last_page?: number }>(`public/events?${new URLSearchParams({ ...base, page: String(page) })}`);
+  const first = await get(1);
+  const rows = [...first.data];
+  if (all) {
+    for (let p = 2; p <= Math.min(first.last_page ?? 1, 30); p++) rows.push(...(await get(p)).data);
+  }
+  return rows.map((e) => {
     const prices = (e.ticket_tiers || []).filter((t) => t.is_active).map((t) => Number(t.price));
     return {
       id: e.uuid,

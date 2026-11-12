@@ -98,13 +98,8 @@ class AdvantaSmsClient
     /** Billable parts for one message body — drives campaign cost estimates. */
     public static function segmentCount(string $message): int
     {
-        $length = mb_strlen($message);
-
-        if ($length <= self::SEGMENT_LENGTH) {
-            return 1;
-        }
-
-        return (int) ceil($length / self::CONCAT_SEGMENT_LENGTH);
+        // GSM-7 vs Unicode matters: one emoji turns 160 chars/part into 70.
+        return SmsMessage::segments($message);
     }
 
     /** @param array<int,string> $recipients */

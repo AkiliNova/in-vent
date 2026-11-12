@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { api, errorMessage, kes, EventItem, TicketTier } from "@/lib/api";
+import { fetchAll, Page } from "@/lib/paging";
+import Pager from "@/components/Pager";
 
 interface Result {
   reference: string;
@@ -40,11 +42,13 @@ export default function Registration() {
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
-  const [recent, setRecent] = useState<Recent[]>([]);
+  const [recentPage, setRecentPage] = useState<(Page<Recent> & { summary: { count: number; cash_total: number; cash_count: number; comp_count: number } }) | null>(null);
+  const [recentN, setRecentN] = useState(1);
+  const recent = recentPage?.data ?? [];
 
   useEffect(() => {
-    api.get<{ data: EventItem[] }>("events?per_page=100").then((r) => {
-      const live = r.data.filter((e) => e.status === "published" || e.status === "live");
+    fetchAll<EventItem>("events").then((all) => {
+      const live = all.filter((e) => e.status === "published" || e.status === "live");
       setEvents(live);
       // ?event=<uuid> from the dashboard's "Register guest" shortcut wins;
       // otherwise pick the next event that hasn't finished.
@@ -53,11 +57,13 @@ export default function Registration() {
         .find((e) => +new Date(e.end_date || e.start_date) > Date.now() - 12 * 3600_000);
       const pick = wanted || next || live[0];
       if (pick) setEventId(pick.uuid);
-    });
+    }).catch(() => {});
   }, []);
 
-  const loadRecent = (uuid: string) =>
-    api.get<Recent[]>(`events/${uuid}/registrations`).then(setRecent).catch(() => setRecent([]));
+  const loadRecent = (uuid: string, n = recentN) =>
+    api.get<NonNullable<typeof recentPage>>(`events/${uuid}/registrations?per_page=15&page=${n}`).then(setRecentPage).catch(() => setRecentPage(null));
+
+  useEffect(() => { if (eventId) loadRecent(eventId, recentN); }, [recentN]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!eventId) return;
@@ -67,8 +73,9 @@ export default function Registration() {
       setTiers(active);
       setTierId(active[0] ? String(active[0].id) : "");
     });
-    loadRecent(eventId);
-  }, [eventId]);
+    setRecentN(1);
+    loadRecent(eventId, 1);
+  }, [eventId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tier = tiers.find((t) => String(t.id) === tierId);
   const qty = Math.max(1, Number(form.quantity) || 1);
@@ -88,7 +95,8 @@ export default function Registration() {
       });
       setResult(r);
       setForm(blank);
-      loadRecent(eventId);
+      setRecentN(1);
+      loadRecent(eventId, 1);
       toast({ title: `${form.name} registered`, description: form.phone ? "Ticket also sent by SMS." : undefined });
     } catch (err) {
       toast({ title: "Couldn't register", description: errorMessage(err), variant: "destructive" });
@@ -188,15 +196,18 @@ export default function Registration() {
               <div className="glass rounded-2xl p-5 print:hidden">
                 <h2 className="font-semibold text-foreground mb-2">Registered at the door</h2>
                 <ul className="divide-y divide-border text-sm">
-                  {recent.slice(0, 15).map((r) => (
+                  {recent.map((r) => (
                     <li key={r.id} className="py-2 flex justify-between gap-2">
                       <span className="text-foreground truncate">{r.buyer_name} <span className="text-muted-foreground">×{r.tickets_count}</span></span>
                       <span className="text-muted-foreground whitespace-nowrap">{r.provider === "complimentary" ? "Comp" : kes(r.total)}</span>
                     </li>
                   ))}
                 </ul>
+                <Pager page={recentPage} onChange={setRecentN} noun="registrations" className="mt-2" />
+                {/* Totals across every door registration, not just this page. */}
                 <p className="text-xs text-muted-foreground mt-2">
-                  Cash collected: {kes(recent.filter((r) => r.provider === "cash").reduce((s, r) => s + Number(r.total), 0))}
+                  Cash collected: <span className="font-medium text-foreground">{kes(recentPage?.summary.cash_total)}</span>
+                  {" "}from {recentPage?.summary.cash_count ?? 0} sale(s) · {recentPage?.summary.comp_count ?? 0} complimentary
                 </p>
               </div>
             )}
