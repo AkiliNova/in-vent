@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { api, kes } from "@/lib/api";
+import { api, errorMessage, kes } from "@/lib/api";
 import { fetchAll } from "@/lib/paging";
 import {
   activeFilters, AudienceFilter, AudienceSummary, PersonState, SmsStatus, Source, STATE_LABEL, STATE_STYLE,
@@ -147,6 +147,7 @@ export default function AudienceBuilder({ channel, body, filter, onChange, isAdm
 }) {
   const [summary, setSummary] = useState<AudienceSummary | null>(null);
   const [counting, setCounting] = useState(false);
+  const [countError, setCountError] = useState<string | null>(null);
   const [refineOpen, setRefineOpen] = useState(activeFilters(filter) > 0);
   const [facets, setFacets] = useState<Facets | null>(null);
   const [review, setReview] = useState<PersonState | "skipped" | "all" | null>(null);
@@ -180,7 +181,8 @@ export default function AudienceBuilder({ channel, body, filter, onChange, isAdm
     const t = window.setTimeout(() => {
       api.post<AudienceSummary>("campaigns/audience", payload)
         .then((s) => { setSummary(s); onSummary(s); })
-        .catch(() => { setSummary(null); onSummary(null); })
+        .then(() => setCountError(null))
+        .catch((e) => { setSummary(null); onSummary(null); setCountError(errorMessage(e)); })
         .finally(() => setCounting(false));
     }, 400);
     return () => window.clearTimeout(t);
@@ -387,6 +389,7 @@ export default function AudienceBuilder({ channel, body, filter, onChange, isAdm
             {counting ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <CheckCircle2 className="w-4 h-4 text-primary" />}
             <span className="text-lg font-bold text-foreground tabular-nums">{summary ? summary.recipient_count.toLocaleString() : "—"}</span>
             <span className="text-sm text-muted-foreground">{summary?.recipient_count === 1 ? "person" : "people"} will get this</span>
+            {countError && !counting && <span className="text-xs text-destructive">Couldn't count: {countError}</span>}
           </div>
           {channel === "sms" && summary && (
             <>

@@ -219,6 +219,15 @@ class SmsMessagingTest extends TestCase
 
         $this->postJson('/api/campaigns/audience', ['channel' => 'email', 'body' => 'Hi', 'audience_filter' => ['source' => 'all', 'event_ids' => [$this->theirs->id]]])
             ->assertJsonPath('recipient_count', 1);
+
+        // Regression: the composer counts email audiences without sending the body
+        // (blank " " arrives as null) — that was a 422 and the count showed "—".
+        foreach ([null, ' ', ''] as $body) {
+            $this->postJson('/api/campaigns/audience', ['channel' => 'email', 'body' => $body, 'audience_filter' => ['source' => 'event', 'event_ids' => [$this->gig->id], 'ticket_tier_id' => [], 'include_contacts' => true]])
+                ->assertOk()->assertJsonPath('recipient_count', 4);
+        }
+        $this->postJson('/api/campaigns/audience/people', ['channel' => 'email', 'body' => ' ', 'audience_filter' => ['source' => 'event', 'event_ids' => [$this->gig->id]]])
+            ->assertOk()->assertJsonPath('total', 4);
     }
 
     public function test_send_is_refused_when_the_africas_talking_balance_is_too_low(): void

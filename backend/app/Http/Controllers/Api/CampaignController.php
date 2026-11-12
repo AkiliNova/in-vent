@@ -475,7 +475,8 @@ class CampaignController extends Controller
             'event_id' => ['nullable', 'integer', 'exists:events,id'],
             'featured_event_id' => ['nullable', 'integer', 'exists:events,id'],
             'subject' => ['nullable', 'string', 'max:255'],
-            'body' => [$required, 'string', 'max:10000'],
+            // Live counts don't need the text (email) or may run before it's written.
+            'body' => $partial ? ['nullable', 'string', 'max:10000'] : [$required, 'string', 'max:10000'],
             'image_path' => ['nullable', 'string', 'max:2048'],
             'cta_label' => ['nullable', 'string', 'max:60', 'required_with:cta_url'],
             'cta_url' => ['nullable', 'url:http,https', 'max:2048', 'required_with:cta_label'],
